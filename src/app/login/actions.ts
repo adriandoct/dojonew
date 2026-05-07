@@ -39,7 +39,7 @@ export async function signup(formData: FormData) {
   const { error } = await supabase.auth.signUp(data);
 
   if (error) {
-    return redirect("/register?error=No se pudo crear la cuenta. Intenta de nuevo.");
+    return redirect("/register?error=" + encodeURIComponent(error.message));
   }
 
   revalidatePath("/", "layout");
