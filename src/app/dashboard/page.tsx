@@ -398,12 +398,13 @@ export default function DashboardPage() {
             <div 
               className={`${styles.metricTrend} ${styles.up}`} 
               style={{ 
-                color: paymentStatus === "pagado" ? "#10B981" : paymentStatus === "pendiente" ? "#F59E0B" : "#EF4444", 
+                color: (paymentStatus === "pagado" || paymentStatus === "exento") ? "#10B981" : paymentStatus === "pendiente" ? "#F59E0B" : "#EF4444", 
                 fontWeight: 'bold' 
               }}
             >
               <span>
                 {paymentStatus === "pagado" && "Estado: Pagado ✓"}
+                {paymentStatus === "exento" && "Estado: Exento de Pago (Admin) ✓"}
                 {paymentStatus === "pendiente" && "Estado: Pendiente de Acreditación ?"}
                 {paymentStatus === "no_pagado" && "Estado: Pendiente de Pago ✗"}
               </span>

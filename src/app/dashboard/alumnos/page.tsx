@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import styles from "./alumnos.module.css";
 import { 
   Users, 
@@ -19,24 +20,28 @@ import {
 import { createClient } from "@/utils/supabase/client";
 
 function parseTutorField(tutorField: string) {
-  const match = tutorField?.match(/(.*)\s+\[credentials:(.*?):(.*?)]/);
+  const match = tutorField?.match(/(.*)\s+\[credentials:(.*?):(.*?)(?::(.*?):(.*?))?\]/);
   if (match) {
     return {
       tutor: match[1].trim(),
       email: match[2],
-      password: match[3]
+      password: match[3],
+      plan: match[4] || "Mensualidad Regular",
+      paymentStatus: match[5] || "pagado"
     };
   }
   return {
     tutor: tutorField || "",
     email: "",
-    password: ""
+    password: "",
+    plan: "Mensualidad Regular",
+    paymentStatus: "pagado"
   };
 }
 
-function serializeTutorField(tutorName: string, email: string, password: string) {
+function serializeTutorField(tutorName: string, email: string, password: string, plan = "Mensualidad Regular", paymentStatus = "pagado") {
   if (email && password) {
-    return `${tutorName.trim()} [credentials:${email.trim().toLowerCase()}:${password.trim()}]`;
+    return `${tutorName.trim()} [credentials:${email.trim().toLowerCase()}:${password.trim()}:${plan}:${paymentStatus}]`;
   }
   return tutorName.trim();
 }
@@ -53,6 +58,8 @@ interface Karateka {
   activo: boolean;
   email?: string;
   password?: string;
+  plan?: string;
+  paymentStatus?: string;
 }
 
 export default function AlumnosPage() {
@@ -82,6 +89,19 @@ export default function AlumnosPage() {
   const [formEmail, setFormEmail] = useState("");
   const [formPassword, setFormPassword] = useState("");
   const [formActivo, setFormActivo] = useState(true);
+  const [formPlan, setFormPlan] = useState("Mensualidad Regular");
+  const [formPaymentStatus, setFormPaymentStatus] = useState("pagado");
+
+  // Search parameters for successful admin registration alerts
+  const searchParams = useSearchParams();
+  const successMsg = searchParams?.get("success");
+
+  useEffect(() => {
+    if (successMsg) {
+      alert(decodeURIComponent(successMsg));
+      window.history.replaceState({}, "", "/dashboard/alumnos");
+    }
+  }, [successMsg]);
 
   // Importer states
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
@@ -120,7 +140,9 @@ export default function AlumnosPage() {
               ...k,
               tutor: credentials.tutor,
               email: k.email || credentials.email,
-              password: k.password || credentials.password
+              password: k.password || credentials.password,
+              plan: k.plan || credentials.plan,
+              paymentStatus: k.paymentStatus || credentials.paymentStatus
             };
           });
           setKaratekas(parsedCached);
@@ -131,7 +153,9 @@ export default function AlumnosPage() {
               ...k,
               tutor: credentials.tutor,
               email: credentials.email || `${k.matricula.toLowerCase()}@dojoia.com`,
-              password: credentials.password || '123456'
+              password: credentials.password || '123456',
+              plan: credentials.plan || "Mensualidad Regular",
+              paymentStatus: credentials.paymentStatus || "pagado"
             };
           });
           setKaratekas(parsedMock);
@@ -144,7 +168,9 @@ export default function AlumnosPage() {
             ...k,
             tutor: credentials.tutor,
             email: credentials.email,
-            password: credentials.password
+            password: credentials.password,
+            plan: credentials.plan || "Mensualidad Regular",
+            paymentStatus: credentials.paymentStatus || "pagado"
           };
         });
         setKaratekas(parsedData);
@@ -191,6 +217,8 @@ export default function AlumnosPage() {
     setFormEmail(`${defaultMatricula.toLowerCase()}@dojoia.com`);
     setFormPassword("123456");
     setFormActivo(true);
+    setFormPlan("Mensualidad Regular");
+    setFormPaymentStatus("pagado");
     setIsFormOpen(true);
   };
 
@@ -207,6 +235,8 @@ export default function AlumnosPage() {
     setFormEmail(k.email || "");
     setFormPassword(k.password || "");
     setFormActivo(k.activo !== false);
+    setFormPlan(k.plan || "Mensualidad Regular");
+    setFormPaymentStatus(k.paymentStatus || "pagado");
     setIsFormOpen(true);
   };
 
@@ -223,7 +253,7 @@ export default function AlumnosPage() {
       nombre: formNombre.trim(),
       cinturon: formCinturon,
       grado: formGrado.trim(),
-      tutor: serializeTutorField(formTutor, formEmail, formPassword),
+      tutor: serializeTutorField(formTutor, formEmail, formPassword, formPlan, formPaymentStatus),
       telefono: formTelefono.trim(),
       foto_url: formFotoUrl.trim() || "https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=200",
       activo: formActivo
@@ -239,7 +269,9 @@ export default function AlumnosPage() {
       foto_url: formFotoUrl.trim() || "https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=200",
       activo: formActivo,
       email: formEmail.trim().toLowerCase(),
-      password: formPassword.trim()
+      password: formPassword.trim(),
+      plan: formPlan,
+      paymentStatus: formPaymentStatus
     };
 
     try {
@@ -576,12 +608,38 @@ export default function AlumnosPage() {
                   </span>
                 </td>
                 <td>{k.grado}</td>
-                <td>{k.tutor}</td>
+                <td>
+                  <div>
+                    <span style={{ display: 'block', fontWeight: 600 }}>{k.tutor}</span>
+                    {k.plan && (
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.15rem', display: 'block' }}>
+                        📋 {k.plan}
+                      </span>
+                    )}
+                  </div>
+                </td>
                 <td>{k.telefono}</td>
                 <td>
-                  <span className={`${styles.statusBadge} ${k.activo !== false ? styles.activo : styles.inactivo}`}>
-                    {k.activo !== false ? "Activo" : "Inactivo"}
-                  </span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', alignItems: 'flex-start' }}>
+                    <span className={`${styles.statusBadge} ${k.activo !== false ? styles.activo : styles.inactivo}`}>
+                      {k.activo !== false ? "Activo" : "Inactivo"}
+                    </span>
+                    {k.paymentStatus && (
+                      <span className={`${styles.statusBadge}`} style={{
+                        background: k.paymentStatus === "pagado" ? "rgba(16, 185, 129, 0.15)" : k.paymentStatus === "exento" ? "rgba(59, 130, 246, 0.15)" : k.paymentStatus === "pendiente" ? "rgba(245, 158, 11, 0.15)" : "rgba(239, 68, 68, 0.15)",
+                        color: k.paymentStatus === "pagado" ? "#10b981" : k.paymentStatus === "exento" ? "#60a5fa" : k.paymentStatus === "pendiente" ? "#f59e0b" : "#ef4444",
+                        border: `1px solid ${k.paymentStatus === "pagado" ? "#10b981" : k.paymentStatus === "exento" ? "#3b82f6" : k.paymentStatus === "pendiente" ? "#f59e0b" : "#ef4444"}`,
+                        fontSize: '0.7rem',
+                        padding: '0.1rem 0.35rem',
+                        borderRadius: '4px',
+                        display: 'inline-block',
+                        fontWeight: 600,
+                        textTransform: 'uppercase'
+                      }}>
+                        {k.paymentStatus === "pagado" ? "Pagado" : k.paymentStatus === "exento" ? "Exento" : k.paymentStatus === "pendiente" ? "Pendiente" : "No Pagado"}
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td>
                   <div className={styles.actions}>
@@ -686,6 +744,36 @@ export default function AlumnosPage() {
                 <div className={styles.formGroup}>
                   <label className={styles.label}>Contraseña de Acceso</label>
                   <input type="text" className={styles.input} placeholder="Contraseña para el alumno" value={formPassword} onChange={(e) => setFormPassword(e.target.value)} required />
+                </div>
+              </div>
+
+              <div className={styles.formGrid}>
+                <div className={styles.formGroup}>
+                  <label className={styles.label}>Plan de Membresía</label>
+                  <select 
+                    className={styles.selectInput} 
+                    value={formPlan} 
+                    onChange={(e) => setFormPlan(e.target.value)}
+                    style={{ width: '100%' }}
+                  >
+                    <option value="Mensualidad Regular">Mensualidad Regular ($500 MXN)</option>
+                    <option value="Trimestre Raion Kai">Trimestre Raion Kai ($1,400 MXN)</option>
+                    <option value="Semestre Shito-Ryu">Semestre Shito-Ryu ($2,700 MXN)</option>
+                  </select>
+                </div>
+                <div className={styles.formGroup}>
+                  <label className={styles.label}>Estado de Pago (Membresía)</label>
+                  <select 
+                    className={styles.selectInput} 
+                    value={formPaymentStatus} 
+                    onChange={(e) => setFormPaymentStatus(e.target.value)}
+                    style={{ width: '100%' }}
+                  >
+                    <option value="pagado">Pagado / Activo</option>
+                    <option value="pendiente">Pendiente de Acreditación</option>
+                    <option value="exento">Exento (No cobrar)</option>
+                    <option value="no_pagado">Pendiente de Pago</option>
+                  </select>
                 </div>
               </div>
 

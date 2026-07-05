@@ -2,6 +2,7 @@ import Link from "next/link";
 import { signup } from "../login/actions";
 import styles from "../auth.module.css";
 import { ArrowLeft } from "lucide-react";
+import { cookies } from "next/headers";
 
 export default async function RegisterPage({
   searchParams,
@@ -33,6 +34,9 @@ export default async function RegisterPage({
   const planShortName = getPlanShortName(plan);
   const paymentStatus = payment === "success" ? "pagado" : payment === "pending" ? "pendiente" : "no_pagado";
 
+  const cookieStore = await cookies();
+  const isAdmin = cookieStore.get("dojoia_role")?.value === "sensei";
+
   return (
     <div className={styles.authContainer}>
       <div className={styles.authBackground}></div>
@@ -56,6 +60,12 @@ export default async function RegisterPage({
 
         {error && <div className={styles.errorBox}>{error}</div>}
 
+        {isAdmin && (
+          <div className={styles.errorBox} style={{ background: 'rgba(59, 130, 246, 0.15)', border: '1px solid #3b82f6', color: '#60a5fa', marginBottom: '1.5rem' }}>
+            <strong>💡 Registro Administrativo:</strong> Sesión activa como Sensei Administrador. Puedes registrar alumnos directamente omitiendo el pago de membresía.
+          </div>
+        )}
+
         {payment === "success" && (
           <div className={styles.errorBox} style={{ background: 'rgba(16, 185, 129, 0.12)', border: '1px solid #10b981', color: '#10b981', marginBottom: '1.5rem' }}>
             <strong>✓ ¡Pago Exitoso!</strong> Se ha acreditado tu pago para el plan <strong>{planName}</strong>. Completa los datos a continuación para registrar tu cuenta de alumno.
@@ -78,6 +88,22 @@ export default async function RegisterPage({
           {/* Hidden fields to pass plan info to signup server action */}
           <input type="hidden" name="plan" value={planShortName} />
           <input type="hidden" name="paymentStatus" value={paymentStatus} />
+
+          {isAdmin && (
+            <div className={styles.formGroup} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', background: 'var(--bg-tertiary)', padding: '0.85rem', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '1.25rem' }}>
+              <input 
+                type="checkbox" 
+                id="bypassPayment" 
+                name="bypassPayment" 
+                value="true"
+                defaultChecked 
+                style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--brand-red)' }}
+              />
+              <label htmlFor="bypassPayment" style={{ color: 'var(--dojo-white)', fontSize: '0.9rem', cursor: 'pointer', userSelect: 'none', fontWeight: 500 }}>
+                Omitir cobro de membresía (Marcar como exento/pagado)
+              </label>
+            </div>
+          )}
 
           <div className={styles.formGroup}>
             <label className={styles.label} htmlFor="fullName">Nombre Completo</label>
