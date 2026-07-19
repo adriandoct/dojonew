@@ -126,7 +126,7 @@ export default async function DashboardLayout({
 
               <Link href="/dashboard/manuales" className={styles.navItem}>
                 <BookOpen size={20} />
-                <span>Manuales PDF</span>
+                <span>Manuales del Participante</span>
               </Link>
 
               <Link href="/dashboard/videos" className={styles.navItem}>

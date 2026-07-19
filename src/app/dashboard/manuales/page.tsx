@@ -16,7 +16,8 @@ import {
   CheckCircle,
   PlusCircle,
   FileCheck,
-  Maximize2
+  Award,
+  Layers
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 
@@ -56,7 +57,7 @@ const INITIAL_MANUALS: Manual[] = [
   },
   {
     id: "m-part-01",
-    titulo: "Manual del Participante: Kyus Iniciales (Blanco y Amarillo)",
+    titulo: "Manual del Participante: Fundamentos Kyus Iniciales (Cintas Blancas y Amarillas)",
     descripcion: "Manual de estudio para alumnos principiantes. Historia del Dojo Raion Kai, terminología técnica en japonés, cortesía (Reigi) y diagramas paso a paso de Kata Pinan Shodan.",
     tipo: "participante",
     file_url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
@@ -82,7 +83,7 @@ export default function ManualesPage() {
   const [role, setRole] = useState<string>("karateka");
   const [manuales, setManuales] = useState<Manual[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"todos" | "instructor" | "participante">("todos");
+  const [activeTab, setActiveTab] = useState<string>("todos");
   const [searchQuery, setSearchQuery] = useState("");
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [selectedManual, setSelectedManual] = useState<Manual | null>(null);
@@ -100,10 +101,6 @@ export default function ManualesPage() {
   useEffect(() => {
     const userRole = getCookie("dojoia_role") || "karateka";
     setRole(userRole);
-    // If student, limit tab to participante default
-    if (userRole !== "sensei") {
-      setActiveTab("participante");
-    }
     loadManuales();
   }, []);
 
@@ -163,7 +160,6 @@ export default function ManualesPage() {
 
     try {
       // 1. Attempt upload to Supabase Storage bucket 'manuales'
-      const fileExt = "pdf";
       const fileName = `${Date.now()}_${selectedFile.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
       
       const { data: storageData, error: storageErr } = await supabase.storage
@@ -174,7 +170,7 @@ export default function ManualesPage() {
         const { data: publicData } = supabase.storage.from("manuales").getPublicUrl(fileName);
         pdfUrl = publicData.publicUrl;
       } else {
-        // Fallback convert PDF to DataURL (base64) or Object URL for local browser preview
+        // Fallback convert PDF to DataURL (base64) for local browser preview
         pdfUrl = await new Promise<string>((resolve) => {
           const reader = new FileReader();
           reader.onload = (evt) => resolve(evt.target?.result as string);
@@ -196,7 +192,7 @@ export default function ManualesPage() {
       };
 
       // 2. Insert in Supabase Database
-      const { data: dbData, error: dbErr } = await supabase
+      const { data: dbData } = await supabase
         .from("manuales")
         .insert([newManualItem])
         .select();
@@ -241,15 +237,30 @@ export default function ManualesPage() {
 
   const isSensei = role === "sensei";
 
+  // Participant manuals subset
+  const participantManuals = manuales.filter(m => m.tipo === "participante");
+  const instructorManuals = manuales.filter(m => m.tipo === "instructor");
+
   // Filter manuals based on tab, role, and search query
   const filteredManuales = manuales.filter(m => {
-    // Role protection: Students cannot view Instructor manuals
+    // Role protection: Students ONLY see Participant Manuals
     if (!isSensei && m.tipo === "instructor") {
       return false;
     }
-    // Tab filter
-    if (activeTab === "instructor" && m.tipo !== "instructor") return false;
-    if (activeTab === "participante" && m.tipo !== "participante") return false;
+
+    // Tab filter for Sensei
+    if (isSensei) {
+      if (activeTab === "instructor" && m.tipo !== "instructor") return false;
+      if (activeTab === "participante" && m.tipo !== "participante") return false;
+    } else {
+      // Tab filter for Alumno
+      if (activeTab === "principiantes" && !m.nivel.toLowerCase().includes("blanca") && !m.nivel.toLowerCase().includes("amarilla")) {
+        return false;
+      }
+      if (activeTab === "avanzados" && !m.nivel.toLowerCase().includes("naranja") && !m.nivel.toLowerCase().includes("negra") && !m.nivel.toLowerCase().includes("avanzad")) {
+        return false;
+      }
+    }
 
     // Search query
     if (searchQuery.trim()) {
@@ -274,51 +285,75 @@ export default function ManualesPage() {
       <div className={styles.header}>
         <h1 className={styles.headerTitle}>
           <BookOpen size={32} />
-          Manuales y Guías Técnicas en PDF
+          {isSensei ? "Gestión de Manuales PDF (Instructor y Participante)" : "Manuales del Participante"}
         </h1>
         <p className={styles.headerSubtitle}>
           {isSensei
-            ? "Módulo de administración: Gestiona y sube manuales pedagógicos para instructores y manuales teóricos para alumnos inscritos."
-            : "Biblioteca digital de manuales teóricos y programas de grado para estudiantes del Dojo."}
+            ? "Módulo de administración: Permite la subida y organización de manuales del instructor y manuales del participante para los alumnos inscritos."
+            : "Biblioteca digital de manuales del participante para alumnos inscritos. Consulta y lee en línea tus guías teóricas, programas por cinta y reglamentos oficiales."}
         </p>
       </div>
 
       {/* Control Bar */}
       <div className={styles.controlsBar}>
         <div className={styles.tabGroup}>
-          {isSensei && (
-            <button
-              className={`${styles.tabBtn} ${activeTab === "todos" ? styles.tabBtnActive : ""}`}
-              onClick={() => setActiveTab("todos")}
-            >
-              Todos los Manuales
-              <span className={styles.tabBadge}>{manuales.length}</span>
-            </button>
-          )}
+          {isSensei ? (
+            <>
+              <button
+                className={`${styles.tabBtn} ${activeTab === "todos" ? styles.tabBtnActive : ""}`}
+                onClick={() => setActiveTab("todos")}
+              >
+                <Layers size={16} />
+                Todos los Manuales
+                <span className={styles.tabBadge}>{manuales.length}</span>
+              </button>
 
-          {isSensei && (
-            <button
-              className={`${styles.tabBtn} ${activeTab === "instructor" ? styles.tabBtnActive : ""}`}
-              onClick={() => setActiveTab("instructor")}
-            >
-              <GraduationCap size={16} />
-              Manual del Instructor
-              <span className={styles.tabBadge}>
-                {manuales.filter(m => m.tipo === "instructor").length}
-              </span>
-            </button>
-          )}
+              <button
+                className={`${styles.tabBtn} ${activeTab === "instructor" ? styles.tabBtnActive : ""}`}
+                onClick={() => setActiveTab("instructor")}
+              >
+                <GraduationCap size={16} />
+                Manuales del Instructor
+                <span className={styles.tabBadge}>{instructorManuals.length}</span>
+              </button>
 
-          <button
-            className={`${styles.tabBtn} ${activeTab === "participante" ? styles.tabBtnActive : ""}`}
-            onClick={() => setActiveTab("participante")}
-          >
-            <Users size={16} />
-            Manual del Participante
-            <span className={styles.tabBadge}>
-              {manuales.filter(m => m.tipo === "participante").length}
-            </span>
-          </button>
+              <button
+                className={`${styles.tabBtn} ${activeTab === "participante" ? styles.tabBtnActive : ""}`}
+                onClick={() => setActiveTab("participante")}
+              >
+                <Users size={16} />
+                Manuales del Participante
+                <span className={styles.tabBadge}>{participantManuals.length}</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                className={`${styles.tabBtn} ${activeTab === "todos" ? styles.tabBtnActive : ""}`}
+                onClick={() => setActiveTab("todos")}
+              >
+                <BookOpen size={16} />
+                Todos los Manuales de Alumnos
+                <span className={styles.tabBadge}>{participantManuals.length}</span>
+              </button>
+
+              <button
+                className={`${styles.tabBtn} ${activeTab === "principiantes" ? styles.tabBtnActive : ""}`}
+                onClick={() => setActiveTab("principiantes")}
+              >
+                <Award size={16} />
+                Principiantes (Blancas/Amarillas)
+              </button>
+
+              <button
+                className={`${styles.tabBtn} ${activeTab === "avanzados" ? styles.tabBtnActive : ""}`}
+                onClick={() => setActiveTab("avanzados")}
+              >
+                <Award size={16} />
+                Intermedios y Avanzados
+              </button>
+            </>
+          )}
         </div>
 
         <div className={styles.actionsGroup}>
@@ -371,7 +406,7 @@ export default function ManualesPage() {
               <input
                 type="text"
                 className={styles.inputField}
-                placeholder="Ej. Manual del Participante: Kata Pinan Nidan"
+                placeholder="Ej. Fundamentos Kyus Iniciales (Cintas Blancas y Amarillas)"
                 value={newTitulo}
                 onChange={(e) => setNewTitulo(e.target.value)}
                 required
