@@ -223,3 +223,29 @@ ON CONFLICT (slug) DO NOTHING;
 -- Eliminar módulos antiguos si ya existían en la base de datos
 DELETE FROM public.modules
 WHERE slug IN ('dojo-math', 'dojo-read', 'dojo-write');
+
+-- ==========================================
+-- 6. TABLA DE MANUALES PDF
+-- ==========================================
+CREATE TABLE IF NOT EXISTS public.manuales (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    titulo TEXT NOT NULL,
+    descripcion TEXT,
+    tipo VARCHAR(20) NOT NULL CHECK (tipo IN ('instructor', 'participante')),
+    file_url TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    file_size INTEGER DEFAULT 0,
+    nivel VARCHAR(50) DEFAULT 'Todos los niveles',
+    autor TEXT DEFAULT 'Sensei Carlos Martínez',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+ALTER TABLE public.manuales ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Lectura pública de manuales" ON public.manuales;
+CREATE POLICY "Lectura pública de manuales" ON public.manuales FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Gestionar manuales" ON public.manuales;
+CREATE POLICY "Gestionar manuales" ON public.manuales FOR ALL USING (true);
+

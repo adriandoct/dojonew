@@ -9,7 +9,10 @@ import {
   Smartphone,
   Save,
   RefreshCw,
-  Info
+  Info,
+  BookOpen,
+  FileText,
+  Upload
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 
@@ -280,6 +283,34 @@ export default function SettingsPage() {
                   onChange={(e) => handleInputChange("sensei_principal", e.target.value)} 
                 />
               </div>
+            </div>
+          </div>
+
+          <div className={styles.card}>
+            <h2>
+              <BookOpen size={22} style={{ color: 'var(--brand-red)' }} />
+              Manuales del Instructor y Participante (.PDF)
+            </h2>
+            <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+              Permite la carga de manuales pedagógicos en PDF para instructores y manuales teóricos para alumnos inscritos con visor de lectura en línea.
+            </p>
+            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+              <a 
+                href="/dashboard/manuales" 
+                style={{ 
+                  display: 'inline-flex', 
+                  alignItems: 'center', 
+                  gap: '0.5rem', 
+                  background: 'var(--brand-red)', 
+                  color: '#ffffff', 
+                  padding: '0.65rem 1.25rem', 
+                  borderRadius: '10px', 
+                  fontWeight: 600,
+                  fontSize: '0.9rem'
+                }}
+              >
+                <Upload size={16} /> Subir o Gestionar Manuales PDF
+              </a>
             </div>
           </div>
 

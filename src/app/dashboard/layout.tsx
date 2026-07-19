@@ -15,7 +15,8 @@ import {
   BarChart2,
   Trophy,
   FileText,
-  CheckSquare
+  CheckSquare,
+  BookOpen
 } from "lucide-react";
 import Link from "next/link";
 import { cookies } from "next/headers";
@@ -92,6 +93,11 @@ export default async function DashboardLayout({
                 <span>Horarios y Programa</span>
               </Link>
 
+              <Link href="/dashboard/manuales" className={styles.navItem}>
+                <BookOpen size={20} />
+                <span>Manuales PDF</span>
+              </Link>
+
               <Link href="/dashboard/videos" className={styles.navItem}>
                 <Video size={20} />
                 <span>Videos y Categorías</span>
@@ -116,6 +122,11 @@ export default async function DashboardLayout({
               <Link href="/dashboard/progreso" className={styles.navItem}>
                 <BarChart2 size={20} />
                 <span>Mi Progreso</span>
+              </Link>
+
+              <Link href="/dashboard/manuales" className={styles.navItem}>
+                <BookOpen size={20} />
+                <span>Manuales PDF</span>
               </Link>
 
               <Link href="/dashboard/videos" className={styles.navItem}>
