@@ -8,11 +8,24 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ==========================================
 -- 1. ENUMS (Tipos de datos personalizados)
 -- ==========================================
-CREATE TYPE user_role AS ENUM ('admin', 'school_admin', 'teacher', 'parent', 'student');
-CREATE TYPE subscription_tier AS ENUM ('free', 'basic', 'plus', 'school', 'premium');
-CREATE TYPE belt_level AS ENUM ('white', 'yellow', 'orange', 'green', 'blue', 'brown', 'black');
-CREATE TYPE mission_type AS ENUM ('daily', 'weekly', 'monthly', 'special');
-CREATE TYPE mission_status AS ENUM ('pending', 'in_progress', 'completed');
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
+        CREATE TYPE user_role AS ENUM ('admin', 'school_admin', 'teacher', 'parent', 'student');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'subscription_tier') THEN
+        CREATE TYPE subscription_tier AS ENUM ('free', 'basic', 'plus', 'school', 'premium');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'belt_level') THEN
+        CREATE TYPE belt_level AS ENUM ('white', 'yellow', 'orange', 'green', 'blue', 'brown', 'black');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'mission_type') THEN
+        CREATE TYPE mission_type AS ENUM ('daily', 'weekly', 'monthly', 'special');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'mission_status') THEN
+        CREATE TYPE mission_status AS ENUM ('pending', 'in_progress', 'completed');
+    END IF;
+END$$;
 
 -- ==========================================
 -- 2. TABLAS PRINCIPALES
