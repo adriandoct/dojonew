@@ -32,7 +32,7 @@ END$$;
 -- ==========================================
 
 -- PERFILES (Extensión de auth.users de Supabase)
-CREATE TABLE public.profiles (
+CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
     role user_role NOT NULL DEFAULT 'parent',
     full_name TEXT NOT NULL,
@@ -43,7 +43,7 @@ CREATE TABLE public.profiles (
 );
 
 -- ESCUELAS (Para clientes B2B)
-CREATE TABLE public.schools (
+CREATE TABLE IF NOT EXISTS public.schools (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
     name TEXT NOT NULL,
     contact_email TEXT,
@@ -54,7 +54,7 @@ CREATE TABLE public.schools (
 );
 
 -- RELACIÓN ESCUELA-USUARIO (Para maestros y admins de escuela)
-CREATE TABLE public.school_members (
+CREATE TABLE IF NOT EXISTS public.school_members (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
     school_id UUID REFERENCES public.schools(id) ON DELETE CASCADE,
     user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -64,7 +64,7 @@ CREATE TABLE public.school_members (
 );
 
 -- ESTUDIANTES (Perfil específico del alumno con gamificación)
-CREATE TABLE public.students (
+CREATE TABLE IF NOT EXISTS public.students (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
     user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE, -- Si el alumno tiene su propio login
     parent_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE, -- Padre responsable
@@ -78,7 +78,7 @@ CREATE TABLE public.students (
 );
 
 -- MÓDULOS EDUCATIVOS (Math, English, Code, etc.)
-CREATE TABLE public.modules (
+CREATE TABLE IF NOT EXISTS public.modules (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     slug TEXT NOT NULL UNIQUE,
@@ -90,7 +90,7 @@ CREATE TABLE public.modules (
 );
 
 -- PROGRESO POR MÓDULO (El avance de un alumno en una materia específica)
-CREATE TABLE public.student_progress (
+CREATE TABLE IF NOT EXISTS public.student_progress (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
     student_id UUID REFERENCES public.students(id) ON DELETE CASCADE,
     module_id UUID REFERENCES public.modules(id) ON DELETE CASCADE,
@@ -102,7 +102,7 @@ CREATE TABLE public.student_progress (
 );
 
 -- MISIONES (Catálogo de retos)
-CREATE TABLE public.missions (
+CREATE TABLE IF NOT EXISTS public.missions (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
     module_id UUID REFERENCES public.modules(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
@@ -115,7 +115,7 @@ CREATE TABLE public.missions (
 );
 
 -- MISIONES DEL ESTUDIANTE (Tracking de misiones asignadas y completadas)
-CREATE TABLE public.student_missions (
+CREATE TABLE IF NOT EXISTS public.student_missions (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
     student_id UUID REFERENCES public.students(id) ON DELETE CASCADE,
     mission_id UUID REFERENCES public.missions(id) ON DELETE CASCADE,
@@ -126,7 +126,7 @@ CREATE TABLE public.student_missions (
 );
 
 -- INTERACCIONES AI COACH (Historial de tutoría)
-CREATE TABLE public.ai_interactions (
+CREATE TABLE IF NOT EXISTS public.ai_interactions (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
     student_id UUID REFERENCES public.students(id) ON DELETE CASCADE,
     module_id UUID REFERENCES public.modules(id) ON DELETE SET NULL,
@@ -138,7 +138,7 @@ CREATE TABLE public.ai_interactions (
 );
 
 -- PAGOS Y SUSCRIPCIONES B2C (Padres)
-CREATE TABLE public.subscriptions (
+CREATE TABLE IF NOT EXISTS public.subscriptions (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
     parent_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
     stripe_subscription_id TEXT UNIQUE,
@@ -162,8 +162,13 @@ END;
 $$ language 'plpgsql';
 
 -- Aplicar trigger de update_updated_at a las tablas principales
+DROP TRIGGER IF EXISTS update_profiles_updated_at ON public.profiles;
 CREATE TRIGGER update_profiles_updated_at BEFORE UPDATE ON public.profiles FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_schools_updated_at ON public.schools;
 CREATE TRIGGER update_schools_updated_at BEFORE UPDATE ON public.schools FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_students_updated_at ON public.students;
 CREATE TRIGGER update_students_updated_at BEFORE UPDATE ON public.students FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
 
 -- Función para crear automáticamente un perfil cuando un usuario se registra en Supabase Auth
@@ -184,6 +189,7 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
@@ -207,20 +213,26 @@ ALTER TABLE public.subscriptions ENABLE ROW LEVEL SECURITY;
 -- Políticas Básicas (Ejemplos iniciales)
 
 -- PROFILES: Un usuario puede leer y actualizar su propio perfil
+DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
 CREATE POLICY "Users can view own profile" ON public.profiles FOR SELECT USING (auth.uid() = id);
+
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
 
 -- STUDENTS: Padres pueden ver a sus propios hijos
+DROP POLICY IF EXISTS "Parents can view their children" ON public.students;
 CREATE POLICY "Parents can view their children" ON public.students FOR SELECT USING (
     auth.uid() = parent_id OR auth.uid() = user_id
 );
 
 -- STUDENTS: Maestros pueden ver a los estudiantes de su escuela
+DROP POLICY IF EXISTS "Teachers can view students in their school" ON public.students;
 CREATE POLICY "Teachers can view students in their school" ON public.students FOR SELECT USING (
     school_id IN (SELECT school_id FROM public.school_members WHERE user_id = auth.uid())
 );
 
 -- MODULES: Son públicos para lectura
+DROP POLICY IF EXISTS "Modules are viewable by everyone" ON public.modules;
 CREATE POLICY "Modules are viewable by everyone" ON public.modules FOR SELECT USING (true);
 
 -- ==========================================
