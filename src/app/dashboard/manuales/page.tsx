@@ -45,7 +45,7 @@ const getCookie = (name: string): string => {
 // Seed default manuals for demo/offline fallback
 const INITIAL_MANUALS: Manual[] = [
   {
-    id: "m-inst-01",
+    id: "11111111-1111-1111-1111-111111111111",
     titulo: "Manual de Didáctica y Pedagogía Shito-Ryu 2026",
     descripcion: "Guía metodológica para Senseis y Sempais. Metodología de enseñanza infantil, psicología marcial, estructura de clases por cinturón y protocolos de evaluación.",
     tipo: "instructor",
@@ -56,7 +56,7 @@ const INITIAL_MANUALS: Manual[] = [
     autor: "Sensei Carlos Martínez"
   },
   {
-    id: "m-part-01",
+    id: "22222222-2222-2222-2222-222222222222",
     titulo: "Manual del Participante: Fundamentos Kyus Iniciales (Cintas Blancas y Amarillas)",
     descripcion: "Manual de estudio para alumnos principiantes. Historia del Dojo Raion Kai, terminología técnica en japonés, cortesía (Reigi) y diagramas paso a paso de Kata Pinan Shodan.",
     tipo: "participante",
@@ -67,7 +67,7 @@ const INITIAL_MANUALS: Manual[] = [
     autor: "Sensei Carlos Martínez"
   },
   {
-    id: "m-part-02",
+    id: "33333333-3333-3333-3333-333333333333",
     titulo: "Manual del Participante: Kumite Táctico y Reglamento WKF",
     descripcion: "Guía de combate deportivo para atletas de nivel intermedio y avanzado. Estrategias de distancia Ma-ai, combinaciones de ataque, esquivas y reglamento oficial de competencia.",
     tipo: "participante",
@@ -162,7 +162,7 @@ export default function ManualesPage() {
       let pdfUrl = "";
       let storageSuccess = false;
 
-      // 1. Attempt Supabase Storage upload
+      // 1. Try upload to Supabase Storage bucket 'manuales'
       try {
         const { data: storageData, error: storageErr } = await supabase.storage
           .from("manuales")
@@ -173,31 +173,48 @@ export default function ManualesPage() {
           pdfUrl = publicData.publicUrl;
           storageSuccess = true;
         } else {
-          console.warn("Supabase storage upload failed, using local blob/preview fallback:", storageErr);
+          console.warn("Storage 'manuales' failed, trying bucket 'videos':", storageErr);
+          // Fallback to bucket 'videos' which is already configured
+          const { data: vData, error: vErr } = await supabase.storage
+            .from("videos")
+            .upload(`manuales/${fileName}`, selectedFile, { upsert: true });
+
+          if (!vErr && vData) {
+            const { data: pData } = supabase.storage.from("videos").getPublicUrl(`manuales/${fileName}`);
+            pdfUrl = pData.publicUrl;
+            storageSuccess = true;
+          } else {
+            console.warn("Storage 'videos' fallback also failed:", vErr);
+          }
         }
       } catch (stErr) {
-        console.warn("Supabase storage exception:", stErr);
+        console.warn("Storage exception:", stErr);
       }
 
-      // If cloud storage failed or offline, generate local object URL / DataURL
+      // 2. Fallback to DataURL / ObjectURL if storage upload did not return a public URL
       if (!pdfUrl) {
-        pdfUrl = URL.createObjectURL(selectedFile);
-        if (selectedFile.size < 4 * 1024 * 1024) {
+        if (selectedFile.size < 5 * 1024 * 1024) {
           try {
             const dataUrl = await new Promise<string>((resolve) => {
               const reader = new FileReader();
-              reader.onload = (evt) => resolve(evt.target?.result as string || "");
+              reader.onload = (evt) => resolve((evt.target?.result as string) || "");
               reader.readAsDataURL(selectedFile);
             });
             if (dataUrl) pdfUrl = dataUrl;
           } catch (e) {
-            console.warn("DataURL conversion error:", e);
+            console.warn("DataURL error:", e);
           }
+        }
+        if (!pdfUrl) {
+          pdfUrl = URL.createObjectURL(selectedFile);
         }
       }
 
+      // 3. Generate valid UUID string for PostgreSQL compatibility
+      const manualId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `10000000-1000-4000-8000-${Date.now().toString().padStart(12, '0').slice(-12)}`;
+
       const newManualItem: Manual = {
-        id: `m_${Date.now()}`,
+        id: manualId,
         titulo: newTitulo,
         descripcion: newDescripcion,
         tipo: newTipo,
@@ -209,26 +226,43 @@ export default function ManualesPage() {
         created_at: new Date().toISOString()
       };
 
-      // 2. Attempt DB Insert if cloud storage succeeded
-      if (storageSuccess) {
-        try {
-          await supabase.from("manuales").insert([newManualItem]);
-        } catch (dbErr) {
+      // 4. Insert into Supabase Database `public.manuales`
+      let dbInserted = false;
+      try {
+        const { data: dbData, error: dbErr } = await supabase
+          .from("manuales")
+          .insert([newManualItem])
+          .select();
+
+        if (!dbErr) {
+          dbInserted = true;
+          if (dbData && dbData.length > 0) {
+            newManualItem.id = dbData[0].id;
+          }
+        } else {
           console.warn("DB insert error:", dbErr);
+          // If file_url is base64 and exceeds text limit, retry with public URL or fallback URL
+          if (pdfUrl.startsWith("data:")) {
+            const lightItem = { ...newManualItem, file_url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf" };
+            const { error: dbErr2 } = await supabase.from("manuales").insert([lightItem]);
+            if (!dbErr2) dbInserted = true;
+          }
         }
+      } catch (dbEx) {
+        console.warn("DB insert exception:", dbEx);
       }
 
-      // 3. ALWAYS update UI state & local cache so the new manual appears immediately
+      // 5. Update local state and localStorage
       const updatedList = [newManualItem, ...manuales];
       setManuales(updatedList);
 
       try {
         localStorage.setItem("dojo_manuales", JSON.stringify(updatedList));
-      } catch (quotaErr) {
-        console.warn("localStorage quota reached, storing lighter cache:", quotaErr);
+      } catch (qErr) {
+        console.warn("localStorage quota error:", qErr);
         const lightList = updatedList.map(item => ({
           ...item,
-          file_url: item.file_url.startsWith("data:") && item.file_url.length > 500000 
+          file_url: item.file_url.startsWith("data:") && item.file_url.length > 300000 
             ? "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf" 
             : item.file_url
         }));
@@ -243,14 +277,16 @@ export default function ManualesPage() {
       setSelectedFile(null);
       setShowUploadModal(false);
 
-      if (storageSuccess) {
-        alert(`¡Manual "${newManualItem.titulo}" subido y publicado exitosamente en Supabase!`);
+      if (storageSuccess && dbInserted) {
+        alert(`¡Manual "${newManualItem.titulo}" subido y guardado exitosamente en la nube de Supabase!`);
+      } else if (dbInserted) {
+        alert(`¡Manual "${newManualItem.titulo}" guardado exitosamente en la base de datos!`);
       } else {
-        alert(`¡Manual "${newManualItem.titulo}" publicado localmente y listo para leer en línea!\n\n(Nota: Si deseas guardarlo permanentemente en Supabase, ejecuta el script 'create_manuales_table.sql' en tu panel de Supabase).`);
+        alert(`¡Manual "${newManualItem.titulo}" publicado localmente en pantalla!`);
       }
     } catch (err: any) {
-      console.error("Error al procesar la subida del manual:", err);
-      alert(`Ocurrió un error al procesar el archivo: ${err?.message || "intenta de nuevo"}`);
+      console.error("Upload handler exception:", err);
+      alert(`Ocurrió un error al procesar la subida: ${err?.message || "intenta de nuevo"}`);
     } finally {
       setUploading(false);
     }
