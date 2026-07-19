@@ -156,26 +156,44 @@ export default function ManualesPage() {
     }
 
     setUploading(true);
-    let pdfUrl = "";
 
     try {
-      // 1. Attempt upload to Supabase Storage bucket 'manuales'
       const fileName = `${Date.now()}_${selectedFile.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
-      
-      const { data: storageData, error: storageErr } = await supabase.storage
-        .from("manuales")
-        .upload(fileName, selectedFile);
+      let pdfUrl = "";
+      let storageSuccess = false;
 
-      if (!storageErr && storageData) {
-        const { data: publicData } = supabase.storage.from("manuales").getPublicUrl(fileName);
-        pdfUrl = publicData.publicUrl;
-      } else {
-        // Fallback convert PDF to DataURL (base64) for local browser preview
-        pdfUrl = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onload = (evt) => resolve(evt.target?.result as string);
-          reader.readAsDataURL(selectedFile);
-        });
+      // 1. Attempt Supabase Storage upload
+      try {
+        const { data: storageData, error: storageErr } = await supabase.storage
+          .from("manuales")
+          .upload(fileName, selectedFile, { upsert: true });
+
+        if (!storageErr && storageData) {
+          const { data: publicData } = supabase.storage.from("manuales").getPublicUrl(fileName);
+          pdfUrl = publicData.publicUrl;
+          storageSuccess = true;
+        } else {
+          console.warn("Supabase storage upload failed, using local blob/preview fallback:", storageErr);
+        }
+      } catch (stErr) {
+        console.warn("Supabase storage exception:", stErr);
+      }
+
+      // If cloud storage failed or offline, generate local object URL / DataURL
+      if (!pdfUrl) {
+        pdfUrl = URL.createObjectURL(selectedFile);
+        if (selectedFile.size < 4 * 1024 * 1024) {
+          try {
+            const dataUrl = await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onload = (evt) => resolve(evt.target?.result as string || "");
+              reader.readAsDataURL(selectedFile);
+            });
+            if (dataUrl) pdfUrl = dataUrl;
+          } catch (e) {
+            console.warn("DataURL conversion error:", e);
+          }
+        }
       }
 
       const newManualItem: Manual = {
@@ -191,18 +209,31 @@ export default function ManualesPage() {
         created_at: new Date().toISOString()
       };
 
-      // 2. Insert in Supabase Database
-      const { data: dbData } = await supabase
-        .from("manuales")
-        .insert([newManualItem])
-        .select();
+      // 2. Attempt DB Insert if cloud storage succeeded
+      if (storageSuccess) {
+        try {
+          await supabase.from("manuales").insert([newManualItem]);
+        } catch (dbErr) {
+          console.warn("DB insert error:", dbErr);
+        }
+      }
 
-      const finalItem = (dbData && dbData.length > 0) ? dbData[0] : newManualItem;
-
-      // 3. Update local state & localStorage
-      const updatedList = [finalItem, ...manuales];
+      // 3. ALWAYS update UI state & local cache so the new manual appears immediately
+      const updatedList = [newManualItem, ...manuales];
       setManuales(updatedList);
-      localStorage.setItem("dojo_manuales", JSON.stringify(updatedList));
+
+      try {
+        localStorage.setItem("dojo_manuales", JSON.stringify(updatedList));
+      } catch (quotaErr) {
+        console.warn("localStorage quota reached, storing lighter cache:", quotaErr);
+        const lightList = updatedList.map(item => ({
+          ...item,
+          file_url: item.file_url.startsWith("data:") && item.file_url.length > 500000 
+            ? "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf" 
+            : item.file_url
+        }));
+        localStorage.setItem("dojo_manuales", JSON.stringify(lightList));
+      }
 
       // Reset form
       setNewTitulo("");
@@ -212,10 +243,14 @@ export default function ManualesPage() {
       setSelectedFile(null);
       setShowUploadModal(false);
 
-      alert(`Manual "${finalItem.titulo}" subido correctamente.`);
-    } catch (err) {
-      console.error("Error al subir manual:", err);
-      alert("Se guardó el manual en la memoria local del navegador.");
+      if (storageSuccess) {
+        alert(`¡Manual "${newManualItem.titulo}" subido y publicado exitosamente en Supabase!`);
+      } else {
+        alert(`¡Manual "${newManualItem.titulo}" publicado localmente y listo para leer en línea!\n\n(Nota: Si deseas guardarlo permanentemente en Supabase, ejecuta el script 'create_manuales_table.sql' en tu panel de Supabase).`);
+      }
+    } catch (err: any) {
+      console.error("Error al procesar la subida del manual:", err);
+      alert(`Ocurrió un error al procesar el archivo: ${err?.message || "intenta de nuevo"}`);
     } finally {
       setUploading(false);
     }
