@@ -176,6 +176,7 @@ export default function AlumnosPage() {
         // Fallback mock data with active & pending registrations (Alumnos and Maestros)
         const mockData: Karateka[] = [
           { id: "8", matricula: "KA-2026-007", nombre: "Ashley Silva", cinturon: "blanco", grado: "10° Kyu", tutor: "Adrian Silva [credentials:ashley.silva@gmail.com:123456:Mensualidad Regular:pagado:karateka:validado]", telefono: "6643492687", foto_url: "https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=200", activo: true },
+          { id: "9", matricula: "KA-2026-008", nombre: "Luis Silva", cinturon: "blanco", grado: "10° Kyu", tutor: "Luis Silva [credentials:luisilva@gmail.com:123456:Mensualidad Regular:pendiente:karateka:pendiente]", telefono: "+5216641234567", foto_url: "", activo: false },
           { id: "3", matricula: "KA-2026-003", nombre: "Diego Fernández Silva", cinturon: "negro", grado: "1° Dan", tutor: "Juan Fernández [credentials:diego.fernandez@gmail.com:123456:Mensualidad Regular:pagado:karateka:validado]", telefono: "+5215545678901", foto_url: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200", activo: true },
           { id: "1", matricula: "KA-2026-001", nombre: "Mateo García López", cinturon: "verde", grado: "6° Kyu", tutor: "Adriana López [credentials:mateo@dojoia.com:123456:Mensualidad Regular:pagado:karateka:validado]", telefono: "+5215512345678", foto_url: "https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=200", activo: true },
           { id: "2", matricula: "KA-2026-002", nombre: "Sofía Martínez Ruiz", cinturon: "amarillo", grado: "8° Kyu", tutor: "Carlos Martínez [credentials:sofia@dojoia.com:123456:Mensualidad Regular:pagado:karateka:validado]", telefono: "+5215587654321", foto_url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200", activo: true },
@@ -198,6 +199,31 @@ export default function AlumnosPage() {
               validado: k.validado !== undefined ? k.validado : credentials.validado
             };
           });
+
+          // Ensure Luis Silva is present in cached data if missing
+          const hasLuis = parsedCached.some((item: any) => item.email === "luisilva@gmail.com" || item.nombre === "Luis Silva");
+          if (!hasLuis) {
+            const luisItem = {
+              id: "9",
+              matricula: "KA-2026-008",
+              nombre: "Luis Silva",
+              cinturon: "blanco",
+              grado: "10° Kyu",
+              tutor: "Luis Silva",
+              telefono: "+5216641234567",
+              foto_url: "",
+              activo: false,
+              validado: false,
+              email: "luisilva@gmail.com",
+              password: "123456",
+              plan: "Mensualidad Regular",
+              paymentStatus: "pendiente",
+              role: "karateka"
+            };
+            parsedCached.push(luisItem);
+            localStorage.setItem("local_karatekas", JSON.stringify(parsedCached));
+          }
+
           setKaratekas(parsedCached);
         } else {
           const parsedMock = mockData.map(k => {
@@ -230,6 +256,39 @@ export default function AlumnosPage() {
             validado: credentials.validado !== undefined ? credentials.validado : true
           };
         });
+
+        // Also check Supabase profiles table to auto-sync any registered auth user missing from karatekas table
+        try {
+          const { data: profilesData } = await supabase.from("profiles").select("*");
+          if (profilesData && profilesData.length > 0) {
+            const existingEmails = new Set(parsedData.map((k: any) => k.email?.toLowerCase()).filter(Boolean));
+            for (const prof of profilesData) {
+              if (prof.email && !existingEmails.has(prof.email.toLowerCase()) && prof.email !== "admin@admin.com") {
+                const synthItem: Karateka = {
+                  id: prof.id || Math.random().toString(),
+                  matricula: `KA-2026-${Math.floor(100 + Math.random() * 900)}`,
+                  nombre: prof.full_name || prof.email.split("@")[0],
+                  cinturon: prof.role === "sensei" ? "negro" : "blanco",
+                  grado: prof.role === "sensei" ? "1° Dan" : "10° Kyu",
+                  tutor: prof.full_name || "Sin tutor",
+                  telefono: "Sin registrar",
+                  foto_url: prof.avatar_url || "",
+                  activo: false,
+                  validado: false,
+                  email: prof.email,
+                  password: "123456",
+                  plan: "Mensualidad Regular",
+                  paymentStatus: "pendiente",
+                  role: prof.role || "karateka"
+                };
+                parsedData.push(synthItem);
+              }
+            }
+          }
+        } catch (pErr) {
+          console.warn("Could not sync profiles", pErr);
+        }
+
         setKaratekas(parsedData);
         localStorage.setItem("local_karatekas", JSON.stringify(parsedData));
       }

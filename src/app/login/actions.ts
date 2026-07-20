@@ -296,6 +296,33 @@ export async function signup(formData: FormData) {
   });
 
   if (error) {
+    // If error is "User already registered" or email already exists
+    const isAlreadyReg = error.message.toLowerCase().includes("already registered") || 
+                         error.message.toLowerCase().includes("registered") ||
+                         error.message.toLowerCase().includes("ya registrado");
+
+    if (isAlreadyReg) {
+      // Ensure the record exists in karatekas table so the admin CAN see and validate them!
+      try {
+        const { data: existingKaratekas } = await supabase
+          .from("karatekas")
+          .select("id, tutor")
+          .ilike("tutor", `%${email.trim().toLowerCase()}%`);
+
+        if (!existingKaratekas || existingKaratekas.length === 0) {
+          await supabase.from("karatekas").insert(dbPayload);
+        }
+      } catch (dbErr) {
+        console.warn("Could not upsert already registered user to karatekas:", dbErr);
+      }
+
+      if (isCurrentAdmin) {
+        return redirect("/dashboard/alumnos?success=" + encodeURIComponent(`El usuario (${email}) ya estaba en el sistema y se ha sincronizado en la lista de validación.`));
+      }
+
+      return redirect("/login?error=" + encodeURIComponent(`El correo "${email}" ya está registrado. Su cuenta ha sido sincronizada y está en la lista del Sensei Administrador pendiente de validación.`));
+    }
+
     // Fallback for offline signup demo
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || String(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY).includes("reemplázala")) {
       if (isCurrentAdmin) {
