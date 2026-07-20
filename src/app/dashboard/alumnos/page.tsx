@@ -15,19 +15,47 @@ import {
   Check,
   AlertCircle,
   FileSpreadsheet,
-  Trash2
+  Trash2,
+  CheckCircle2,
+  CreditCard,
+  ShieldCheck,
+  Clock,
+  UserCheck,
+  GraduationCap
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 
+// Client-side helper to read cookies
+const getCookie = (name: string): string => {
+  if (typeof document === 'undefined') return '';
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return decodeURIComponent(parts.pop()?.split(';').shift() || '');
+  return '';
+};
+
 function parseTutorField(tutorField: string) {
-  const match = tutorField?.match(/(.*)\s+\[credentials:(.*?):(.*?)(?::(.*?):(.*?))?\]/);
+  if (!tutorField) {
+    return {
+      tutor: "",
+      email: "",
+      password: "",
+      plan: "Mensualidad Regular",
+      paymentStatus: "pagado",
+      role: "karateka",
+      validado: true
+    };
+  }
+  const match = tutorField.match(/(.*)\s+\[credentials:([^:]*):([^:]*)(?::([^:]*))?(?::([^:]*))?(?::([^:]*))?(?::([^:]*))?\]/);
   if (match) {
     return {
       tutor: match[1].trim(),
-      email: match[2],
-      password: match[3],
+      email: match[2] || "",
+      password: match[3] || "",
       plan: match[4] || "Mensualidad Regular",
-      paymentStatus: match[5] || "pagado"
+      paymentStatus: match[5] || "pagado",
+      role: match[6] || "karateka",
+      validado: match[7] ? match[7] === "validado" : true
     };
   }
   return {
@@ -35,13 +63,24 @@ function parseTutorField(tutorField: string) {
     email: "",
     password: "",
     plan: "Mensualidad Regular",
-    paymentStatus: "pagado"
+    paymentStatus: "pagado",
+    role: "karateka",
+    validado: true
   };
 }
 
-function serializeTutorField(tutorName: string, email: string, password: string, plan = "Mensualidad Regular", paymentStatus = "pagado") {
+function serializeTutorField(
+  tutorName: string, 
+  email: string, 
+  password: string, 
+  plan = "Mensualidad Regular", 
+  paymentStatus = "pagado",
+  role = "karateka",
+  validado = true
+) {
   if (email && password) {
-    return `${tutorName.trim()} [credentials:${email.trim().toLowerCase()}:${password.trim()}:${plan}:${paymentStatus}]`;
+    const valStr = validado ? "validado" : "pendiente";
+    return `${tutorName.trim()} [credentials:${email.trim().toLowerCase()}:${password.trim()}:${plan}:${paymentStatus}:${role}:${valStr}]`;
   }
   return tutorName.trim();
 }
@@ -59,7 +98,9 @@ interface Karateka {
   email?: string;
   password?: string;
   plan?: string;
-  paymentStatus?: string;
+  paymentStatus?: string; // 'pagado' | 'pendiente' | 'no_pagado' | 'exento'
+  role?: string; // 'karateka' | 'sensei'
+  validado?: boolean; // true | false
 }
 
 export default function AlumnosPage() {
@@ -67,7 +108,9 @@ export default function AlumnosPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [beltFilter, setBeltFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState("activos");
+  const [roleFilter, setRoleFilter] = useState("todos"); // 'todos', 'karateka', 'sensei'
+  const [statusFilter, setStatusFilter] = useState("activos"); // 'activos', 'pendientes_validacion', 'inactivos', 'todos'
+  const [isAdmin, setIsAdmin] = useState(true);
 
   // Modals
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -89,6 +132,8 @@ export default function AlumnosPage() {
   const [formEmail, setFormEmail] = useState("");
   const [formPassword, setFormPassword] = useState("");
   const [formActivo, setFormActivo] = useState(true);
+  const [formValidado, setFormValidado] = useState(true);
+  const [formRole, setFormRole] = useState("karateka");
   const [formPlan, setFormPlan] = useState("Mensualidad Regular");
   const [formPaymentStatus, setFormPaymentStatus] = useState("pagado");
 
@@ -97,6 +142,12 @@ export default function AlumnosPage() {
   const successMsg = searchParams?.get("success");
 
   useEffect(() => {
+    // Check administrator role
+    const currentRole = getCookie("dojoia_role");
+    const currentEmail = getCookie("dojoia_email");
+    const adminCheck = currentRole === "sensei" || currentEmail === "admin@admin.com" || !currentRole;
+    setIsAdmin(adminCheck);
+
     if (successMsg) {
       alert(decodeURIComponent(successMsg));
       window.history.replaceState({}, "", "/dashboard/alumnos");
@@ -122,16 +173,16 @@ export default function AlumnosPage() {
         .order("nombre", { ascending: true });
 
       if (error || !data || data.length === 0) {
-        // Fallback mock data
+        // Fallback mock data with active & pending registrations (Alumnos and Maestros)
         const mockData: Karateka[] = [
-          { id: "1", matricula: "KA-2026-001", nombre: "Mateo García López", cinturon: "verde", grado: "6° Kyu", tutor: "Adriana López", telefono: "+5215512345678", foto_url: "https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=200", activo: true },
-          { id: "2", matricula: "KA-2026-002", nombre: "Sofía Martínez Ruiz", cinturon: "amarillo", grado: "8° Kyu", tutor: "Carlos Martínez", telefono: "+5215587654321", foto_url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200", activo: true },
-          { id: "3", matricula: "KA-2026-003", nombre: "Diego Fernández Silva", cinturon: "negro", grado: "1° Dan", tutor: "Juan Fernández", telefono: "+5215545678901", foto_url: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200", activo: true },
-          { id: "4", matricula: "KA-2026-004", nombre: "Valentina Ruiz Castro", cinturon: "azul", grado: "5° Kyu", tutor: "Patricia Castro", telefono: "+5215598765432", foto_url: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&q=80&w=200", activo: true },
-          { id: "5", matricula: "KA-2026-005", nombre: "Lucas Torres Mendoza", cinturon: "marron", grado: "2° Kyu", tutor: "Fernando Torres", telefono: "+5215565432109", foto_url: "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&q=80&w=200", activo: true }
+          { id: "8", matricula: "KA-2026-007", nombre: "Ashley Silva", cinturon: "blanco", grado: "10° Kyu", tutor: "Adrian Silva [credentials:ashley.silva@gmail.com:123456:Mensualidad Regular:pagado:karateka:validado]", telefono: "6643492687", foto_url: "https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=200", activo: true },
+          { id: "3", matricula: "KA-2026-003", nombre: "Diego Fernández Silva", cinturon: "negro", grado: "1° Dan", tutor: "Juan Fernández [credentials:diego.fernandez@gmail.com:123456:Mensualidad Regular:pagado:karateka:validado]", telefono: "+5215545678901", foto_url: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200", activo: true },
+          { id: "1", matricula: "KA-2026-001", nombre: "Mateo García López", cinturon: "verde", grado: "6° Kyu", tutor: "Adriana López [credentials:mateo@dojoia.com:123456:Mensualidad Regular:pagado:karateka:validado]", telefono: "+5215512345678", foto_url: "https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=200", activo: true },
+          { id: "2", matricula: "KA-2026-002", nombre: "Sofía Martínez Ruiz", cinturon: "amarillo", grado: "8° Kyu", tutor: "Carlos Martínez [credentials:sofia@dojoia.com:123456:Mensualidad Regular:pagado:karateka:validado]", telefono: "+5215587654321", foto_url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200", activo: true },
+          { id: "6", matricula: "KA-2026-006", nombre: "Carlos Eduardo Mendoza", cinturon: "blanco", grado: "10° Kyu", tutor: "Adrián Mendoza [credentials:carlos.mendoza@gmail.com:123456:Mensualidad Regular:pendiente:karateka:pendiente]", telefono: "+5216643492687", foto_url: "", activo: false },
+          { id: "7", matricula: "MS-2026-001", nombre: "Sensei Roberto Gómez", cinturon: "negro", grado: "3° Dan", tutor: "Sensei Roberto Gómez [credentials:roberto.gomez@dojoia.com:123456:Trimestre Raion Kai:pagado:sensei:pendiente]", telefono: "+5216649876543", foto_url: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200", activo: false },
         ];
         
-        // Cache mock to local storage so edits are saved in dev mode
         const cached = localStorage.getItem("local_karatekas");
         if (cached) {
           const parsedCached = JSON.parse(cached).map((k: any) => {
@@ -142,7 +193,9 @@ export default function AlumnosPage() {
               email: k.email || credentials.email,
               password: k.password || credentials.password,
               plan: k.plan || credentials.plan,
-              paymentStatus: k.paymentStatus || credentials.paymentStatus
+              paymentStatus: k.paymentStatus || credentials.paymentStatus,
+              role: k.role || credentials.role || "karateka",
+              validado: k.validado !== undefined ? k.validado : credentials.validado
             };
           });
           setKaratekas(parsedCached);
@@ -155,7 +208,9 @@ export default function AlumnosPage() {
               email: credentials.email || `${k.matricula.toLowerCase()}@dojoia.com`,
               password: credentials.password || '123456',
               plan: credentials.plan || "Mensualidad Regular",
-              paymentStatus: credentials.paymentStatus || "pagado"
+              paymentStatus: credentials.paymentStatus || "pagado",
+              role: credentials.role || "karateka",
+              validado: credentials.validado
             };
           });
           setKaratekas(parsedMock);
@@ -170,7 +225,9 @@ export default function AlumnosPage() {
             email: credentials.email,
             password: credentials.password,
             plan: credentials.plan || "Mensualidad Regular",
-            paymentStatus: credentials.paymentStatus || "pagado"
+            paymentStatus: credentials.paymentStatus || "pagado",
+            role: credentials.role || "karateka",
+            validado: credentials.validado !== undefined ? credentials.validado : true
           };
         });
         setKaratekas(parsedData);
@@ -203,7 +260,6 @@ export default function AlumnosPage() {
   // Open Form for Create
   const handleCreateOpen = () => {
     setFormId("");
-    // Generate simple matricula
     const nextNum = String(karatekas.length + 1).padStart(3, '0');
     const defaultMatricula = `KA-2026-${nextNum}`;
     setFormMatricula(defaultMatricula);
@@ -213,10 +269,11 @@ export default function AlumnosPage() {
     setFormTutor("");
     setFormTelefono("");
     setFormFotoUrl("");
-    // Generate defaults for email and password
     setFormEmail(`${defaultMatricula.toLowerCase()}@dojoia.com`);
     setFormPassword("123456");
     setFormActivo(true);
+    setFormValidado(true);
+    setFormRole("karateka");
     setFormPlan("Mensualidad Regular");
     setFormPaymentStatus("pagado");
     setIsFormOpen(true);
@@ -235,9 +292,97 @@ export default function AlumnosPage() {
     setFormEmail(k.email || "");
     setFormPassword(k.password || "");
     setFormActivo(k.activo !== false);
+    setFormValidado(k.validado !== false);
+    setFormRole(k.role || "karateka");
     setFormPlan(k.plan || "Mensualidad Regular");
     setFormPaymentStatus(k.paymentStatus || "pagado");
     setIsFormOpen(true);
+  };
+
+  // ADMIN ACTION: Single-click Validate and Officially Approve User
+  const handleValidateUser = async (k: Karateka) => {
+    if (!isAdmin) {
+      alert("⚠️ Acción restringida: Solo el Sensei Administrador tiene el privilegio de validar registros.");
+      return;
+    }
+
+    const dbPayload = {
+      activo: true,
+      tutor: serializeTutorField(
+        k.tutor,
+        k.email || `${k.matricula.toLowerCase()}@dojoia.com`,
+        k.password || "123456",
+        k.plan || "Mensualidad Regular",
+        k.paymentStatus || "pagado",
+        k.role || "karateka",
+        true
+      )
+    };
+
+    try {
+      // Update in Supabase
+      await supabase.from("karatekas").update(dbPayload).eq("id", k.id);
+
+      // Update local state
+      const updatedList = karatekas.map(item => item.id === k.id ? { 
+        ...item, 
+        validado: true, 
+        activo: true 
+      } : item);
+
+      setKaratekas(updatedList);
+      localStorage.setItem("local_karatekas", JSON.stringify(updatedList));
+
+      const tipoUser = k.role === "sensei" ? "Maestro / Sensei" : "Alumno / Karateka";
+      alert(`✅ ¡Registro Validado! El ${tipoUser} "${k.nombre}" ha sido VALIDADO Y REGISTRADO OFICIALMENTE con éxito.`);
+    } catch (err) {
+      console.error("Error validando usuario:", err);
+      alert("Ocurrió un error al intentar validar el registro.");
+    }
+  };
+
+  // ADMIN ACTION: Toggle or cycle Payment Status (Pagado -> Pendiente -> Exento -> No Pagado)
+  const handleTogglePaymentStatus = async (k: Karateka) => {
+    if (!isAdmin) {
+      alert("⚠️ Acción restringida: Solo el Sensei Administrador tiene el privilegio de verificar pagos.");
+      return;
+    }
+
+    const currentStatus = k.paymentStatus || "pagado";
+    const statusCycle: Record<string, string> = {
+      "pagado": "pendiente",
+      "pendiente": "no_pagado",
+      "no_pagado": "exento",
+      "exento": "pagado"
+    };
+
+    const nextStatus = statusCycle[currentStatus] || "pagado";
+
+    const dbPayload = {
+      tutor: serializeTutorField(
+        k.tutor,
+        k.email || `${k.matricula.toLowerCase()}@dojoia.com`,
+        k.password || "123456",
+        k.plan || "Mensualidad Regular",
+        nextStatus,
+        k.role || "karateka",
+        k.validado !== false
+      )
+    };
+
+    try {
+      await supabase.from("karatekas").update(dbPayload).eq("id", k.id);
+
+      const updatedList = karatekas.map(item => item.id === k.id ? { 
+        ...item, 
+        paymentStatus: nextStatus 
+      } : item);
+
+      setKaratekas(updatedList);
+      localStorage.setItem("local_karatekas", JSON.stringify(updatedList));
+    } catch (err) {
+      console.error("Error al actualizar pago:", err);
+    }
   };
 
   // Submit manual registration
@@ -253,9 +398,9 @@ export default function AlumnosPage() {
       nombre: formNombre.trim(),
       cinturon: formCinturon,
       grado: formGrado.trim(),
-      tutor: serializeTutorField(formTutor, formEmail, formPassword, formPlan, formPaymentStatus),
+      tutor: serializeTutorField(formTutor, formEmail, formPassword, formPlan, formPaymentStatus, formRole, formValidado),
       telefono: formTelefono.trim(),
-      foto_url: formFotoUrl.trim() || "https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=200",
+      foto_url: formFotoUrl.trim() || (formRole === "sensei" ? "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200" : "https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=200"),
       activo: formActivo
     };
 
@@ -266,8 +411,10 @@ export default function AlumnosPage() {
       grado: formGrado.trim(),
       tutor: formTutor.trim(),
       telefono: formTelefono.trim(),
-      foto_url: formFotoUrl.trim() || "https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=200",
+      foto_url: formFotoUrl.trim() || (formRole === "sensei" ? "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200" : "https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=200"),
       activo: formActivo,
+      validado: formValidado,
+      role: formRole,
       email: formEmail.trim().toLowerCase(),
       password: formPassword.trim(),
       plan: formPlan,
@@ -285,7 +432,6 @@ export default function AlumnosPage() {
           return;
         }
 
-        // Update in local state
         const updatedList = karatekas.map(k => k.id === formId ? { ...k, ...localKaratekaFields } : k);
         setKaratekas(updatedList);
         localStorage.setItem("local_karatekas", JSON.stringify(updatedList));
@@ -299,7 +445,6 @@ export default function AlumnosPage() {
           return;
         }
 
-        // Update in local state
         const dbNewKarateka = data && data[0];
         const newKarateka = {
           id: dbNewKarateka ? dbNewKarateka.id : Math.random().toString(),
@@ -312,7 +457,7 @@ export default function AlumnosPage() {
       setIsFormOpen(false);
     } catch (err) {
       console.error(err);
-      alert("Ocurrió un error inesperado al intentar guardar el alumno.");
+      alert("Ocurrió un error inesperado al intentar guardar el usuario.");
     }
   };
 
@@ -353,10 +498,7 @@ export default function AlumnosPage() {
         setCsvHeaders(headers);
         setCsvRows(rows.slice(1));
         
-        // Auto-match headers if common names found
         const initialMapping: Record<string, number> = {};
-        const databaseKeys = ["nombre", "matricula", "cinturon", "grado", "tutor", "telefono", "foto"];
-        
         headers.forEach((h, idx) => {
           const cleanHeader = h.toLowerCase().replace(/[^a-z]/g, "");
           if (cleanHeader.includes("nombre") || cleanHeader.includes("name")) initialMapping["nombre"] = idx;
@@ -374,7 +516,6 @@ export default function AlumnosPage() {
     reader.readAsText(file);
   };
 
-  // Update mapping selections
   const handleMappingChange = (dbKey: string, csvIdx: number) => {
     setColumnMapping(prev => ({
       ...prev,
@@ -382,7 +523,6 @@ export default function AlumnosPage() {
     }));
   };
 
-  // Recalculate preview when mapping changes
   useEffect(() => {
     if (csvRows.length === 0) return;
 
@@ -400,7 +540,6 @@ export default function AlumnosPage() {
     setImportPreview(previewList);
   }, [columnMapping, csvRows]);
 
-  // Execute CSV import
   const handleImportSubmit = async () => {
     if (columnMapping["nombre"] === undefined || columnMapping["tutor"] === undefined || columnMapping["telefono"] === undefined) {
       alert("Es obligatorio mapear por lo menos: Nombre, Tutor y Teléfono.");
@@ -425,12 +564,13 @@ export default function AlumnosPage() {
         tutor: row[columnMapping["tutor"]],
         telefono: row[columnMapping["telefono"]],
         foto_url: columnMapping["foto"] !== undefined ? row[columnMapping["foto"]] : "https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=200",
-        activo: true
+        activo: true,
+        validado: true,
+        role: "karateka"
       };
     });
 
     try {
-      // Send to Supabase in bulk
       const dbPayload = importedList.map(k => ({
         nombre: k.nombre,
         matricula: k.matricula,
@@ -444,7 +584,6 @@ export default function AlumnosPage() {
 
       await supabase.from("karatekas").insert(dbPayload);
 
-      // Save to local storage cache too
       const mergedList = [...karatekas, ...importedList];
       setKaratekas(mergedList);
       localStorage.setItem("local_karatekas", JSON.stringify(mergedList));
@@ -463,7 +602,12 @@ export default function AlumnosPage() {
 
   // Delete Karateka
   const handleDelete = async (id: string, nombre: string) => {
-    if (!confirm(`¿Estás seguro de que deseas eliminar permanentemente a ${nombre}? Esta acción no se puede deshacer y borrará sus asistencias y exámenes vinculados.`)) {
+    if (!isAdmin) {
+      alert("⚠️ Acción restringida: Solo el Administrador puede eliminar registros.");
+      return;
+    }
+
+    if (!confirm(`¿Estás seguro de que deseas eliminar permanentemente a ${nombre}? Esta acción no se puede deshacer.`)) {
       return;
     }
 
@@ -476,14 +620,13 @@ export default function AlumnosPage() {
         return;
       }
 
-      // Update in local state
       const updatedList = karatekas.filter(k => k.id !== id);
       setKaratekas(updatedList);
       localStorage.setItem("local_karatekas", JSON.stringify(updatedList));
-      alert("Alumno eliminado correctamente.");
+      alert("Usuario eliminado correctamente.");
     } catch (err) {
       console.error(err);
-      alert("Ocurrió un error inesperado al intentar eliminar al alumno.");
+      alert("Ocurrió un error inesperado al intentar eliminar.");
     }
   };
 
@@ -491,37 +634,137 @@ export default function AlumnosPage() {
     window.print();
   };
 
-  // Filter students based on search queries, belts and active status
+  // Filter students/teachers based on search queries, belts, roles, and validation status
   const filteredKaratekas = karatekas.filter(k => {
     const matchesSearch = k.nombre.toLowerCase().includes(search.toLowerCase()) || 
                           k.matricula.toLowerCase().includes(search.toLowerCase()) ||
-                          k.tutor.toLowerCase().includes(search.toLowerCase());
+                          k.tutor.toLowerCase().includes(search.toLowerCase()) ||
+                          (k.email && k.email.toLowerCase().includes(search.toLowerCase()));
+
     const matchesBelt = beltFilter ? k.cinturon.toLowerCase() === beltFilter.toLowerCase() : true;
     
+    let matchesRole = true;
+    if (roleFilter === "karateka") {
+      matchesRole = (k.role || "karateka") === "karateka";
+    } else if (roleFilter === "sensei") {
+      matchesRole = k.role === "sensei";
+    }
+
     let matchesStatus = true;
     if (statusFilter === "activos") {
-      matchesStatus = k.activo !== false;
+      matchesStatus = k.activo !== false && k.validado !== false;
+    } else if (statusFilter === "pendientes_validacion") {
+      matchesStatus = k.validado === false || k.activo === false;
     } else if (statusFilter === "inactivos") {
       matchesStatus = k.activo === false;
     }
     
-    return matchesSearch && matchesBelt && matchesStatus;
+    return matchesSearch && matchesBelt && matchesRole && matchesStatus;
   });
+
+  // Calculate statistics for Admin KPI summary bar
+  const totalCount = karatekas.length;
+  const pendingValidationCount = karatekas.filter(k => k.validado === false || k.activo === false).length;
+  const pendingPaymentCount = karatekas.filter(k => k.paymentStatus === "pendiente" || k.paymentStatus === "no_pagado").length;
+  const teachersCount = karatekas.filter(k => k.role === "sensei").length;
 
   return (
     <div className={styles.container}>
+      {/* Page Title & Actions */}
       <div className={styles.header}>
         <div>
-          <h1>Directorio de Karatekas</h1>
-          <p>Nómina de alumnos y licencias de la academia Shito-Ryu.</p>
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <Users size={32} color="var(--brand-red)" /> Directorio de Alumnos y Maestros
+          </h1>
+          <p>Nómina oficial de registrados, validación de cuentas y verificación de pagos del Dojo.</p>
         </div>
-        <div className={styles.headerActions} style={{ marginRight: '8.5rem' }}>
-          <button className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }} onClick={() => setIsImportOpen(true)}>
-            <Upload size={18} /> Importar Excel/CSV
-          </button>
-          <button className="btn-primary" style={{ background: 'var(--brand-red)', display: 'flex', alignItems: 'center', gap: '0.4rem' }} onClick={handleCreateOpen}>
-            <Plus size={18} /> Registrar Karateka
-          </button>
+
+        {isAdmin && (
+          <div className={styles.headerActions} style={{ marginRight: '8.5rem' }}>
+            <button className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }} onClick={() => setIsImportOpen(true)}>
+              <Upload size={18} /> Importar Excel/CSV
+            </button>
+            <button className="btn-primary" style={{ background: 'var(--brand-red)', display: 'flex', alignItems: 'center', gap: '0.4rem' }} onClick={handleCreateOpen}>
+              <Plus size={18} /> Registrar Alumno / Maestro
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Admin Privilege Banner */}
+      {isAdmin && (
+        <div className={styles.adminBanner}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <ShieldCheck size={24} color="#60a5fa" />
+            <div>
+              <strong>🔑 Panel con Privilegios de Administrador (Sensei):</strong>
+              <span style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                Los alumnos o maestros que se registran aparecen aquí para validarlos y verificar si ya pagaron o no, y activarlos oficialmente.
+              </span>
+            </div>
+          </div>
+
+          {pendingValidationCount > 0 && (
+            <button 
+              onClick={() => setStatusFilter("pendientes_validacion")}
+              style={{
+                background: '#f59e0b',
+                color: '#000',
+                border: 'none',
+                padding: '0.4rem 0.85rem',
+                borderRadius: '6px',
+                fontWeight: 700,
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem'
+              }}
+            >
+              <Clock size={16} /> Ver {pendingValidationCount} Pendiente{pendingValidationCount > 1 ? 's' : ''}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* KPI Summary Cards */}
+      <div className={styles.statsGrid}>
+        <div className={styles.statCard}>
+          <div className={styles.statHeader}>
+            <span>Total Registrados</span>
+            <Users size={20} color="var(--brand-red)" />
+          </div>
+          <div className={styles.statValue}>{totalCount}</div>
+          <div className={styles.statSubtext}>Alumnos y maestros en la academia</div>
+        </div>
+
+        <div className={styles.statCard} style={{ borderColor: pendingValidationCount > 0 ? '#f59e0b' : 'var(--border-color)' }}>
+          <div className={styles.statHeader}>
+            <span style={{ color: pendingValidationCount > 0 ? '#f59e0b' : 'var(--text-secondary)' }}>Pendientes de Validación</span>
+            <Clock size={20} color={pendingValidationCount > 0 ? '#f59e0b' : 'var(--text-tertiary)'} />
+          </div>
+          <div className={styles.statValue} style={{ color: pendingValidationCount > 0 ? '#f59e0b' : 'var(--text-primary)' }}>
+            {pendingValidationCount}
+          </div>
+          <div className={styles.statSubtext}>Requieren autorización de Admin</div>
+        </div>
+
+        <div className={styles.statCard}>
+          <div className={styles.statHeader}>
+            <span>Pagos Pendientes</span>
+            <CreditCard size={20} color="#3b82f6" />
+          </div>
+          <div className={styles.statValue}>{pendingPaymentCount}</div>
+          <div className={styles.statSubtext}>Membresías por conciliar o abonar</div>
+        </div>
+
+        <div className={styles.statCard}>
+          <div className={styles.statHeader}>
+            <span>Maestros / Instructores</span>
+            <GraduationCap size={20} color="#f43f5e" />
+          </div>
+          <div className={styles.statValue}>{teachersCount}</div>
+          <div className={styles.statSubtext}>Senseis y Sempais acreditados</div>
         </div>
       </div>
 
@@ -531,7 +774,7 @@ export default function AlumnosPage() {
           <Search size={18} color="var(--text-secondary)" />
           <input 
             type="text" 
-            placeholder="Buscar por nombre, matrícula o tutor..." 
+            placeholder="Buscar por nombre, matrícula, tutor o email..." 
             className={styles.searchInput}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -555,124 +798,182 @@ export default function AlumnosPage() {
 
         <select 
           className={styles.selectInput}
+          value={roleFilter}
+          onChange={(e) => setRoleFilter(e.target.value)}
+        >
+          <option value="todos">Rol: Alumnos y Maestros</option>
+          <option value="karateka">Solo Alumnos (Karatekas)</option>
+          <option value="sensei">Solo Maestros (Senseis)</option>
+        </select>
+
+        <select 
+          className={styles.selectInput}
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
+          style={{ borderColor: statusFilter === 'pendientes_validacion' ? '#f59e0b' : 'var(--border-color)' }}
         >
-          <option value="activos">Estado: Activos</option>
+          <option value="activos">Estado: Validados y Activos</option>
+          <option value="pendientes_validacion">⏳ Pendientes de Validación ({pendingValidationCount})</option>
           <option value="inactivos">Estado: Inactivos</option>
           <option value="todos">Estado: Todos</option>
         </select>
       </div>
 
-      {/* Grid List */}
+      {/* Grid Table */}
       <div className={styles.tableCard}>
         <table className={styles.table}>
           <thead>
             <tr>
-              <th>Nombre Karateka</th>
+              <th>Nombre Karateka / Maestro</th>
               <th>Matrícula</th>
               <th>Cinturón</th>
               <th>Grado Kyu/Dan</th>
-              <th>Tutor responsable</th>
+              <th>Tutor / Plan</th>
               <th>Teléfono</th>
-              <th>Estado</th>
-              <th>Acciones</th>
+              <th>Estado y Pago</th>
+              <th>Acciones de Administración</th>
             </tr>
           </thead>
           <tbody>
-            {filteredKaratekas.map((k) => (
-              <tr key={k.id}>
-                <td>
-                  <div className={styles.studentCell}>
-                    <div className={styles.avatar}>
-                      {k.foto_url ? (
-                        <img src={k.foto_url} alt={k.nombre} className={styles.avatarImg} />
-                      ) : (
-                        k.nombre.substring(0, 2).toUpperCase()
-                      )}
+            {filteredKaratekas.map((k) => {
+              const isPending = k.validado === false || k.activo === false;
+              const isSenseiRole = k.role === "sensei";
+
+              return (
+                <tr key={k.id} style={{ background: isPending ? 'rgba(245, 158, 11, 0.05)' : 'transparent' }}>
+                  <td>
+                    <div className={styles.studentCell}>
+                      <div className={styles.avatar} style={{ background: isSenseiRole ? 'var(--brand-red)' : 'var(--brand-gold)' }}>
+                        {k.foto_url ? (
+                          <img src={k.foto_url} alt={k.nombre} className={styles.avatarImg} />
+                        ) : (
+                          k.nombre.substring(0, 2).toUpperCase()
+                        )}
+                      </div>
+                      <div>
+                        <span style={{ fontWeight: 600, display: 'block' }}>{k.nombre}</span>
+                        <span className={`${styles.roleBadge} ${isSenseiRole ? styles.sensei : styles.karateka}`}>
+                          {isSenseiRole ? "🥋 Sensei / Maestro" : "👦 Alumno"}
+                        </span>
+                        {k.email && (
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                            🔑 {k.email}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <span style={{ fontWeight: 600 }}>{k.nombre}</span>
-                      {k.email && (
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
-                          🔑 {k.email}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </td>
-                <td><span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{k.matricula}</span></td>
-                <td>
-                  <span className={`belt-badge ${getBeltColor(k.cinturon)}`}>
-                    {k.cinturon}
-                  </span>
-                </td>
-                <td>{k.grado}</td>
-                <td>
-                  <div>
-                    <span style={{ display: 'block', fontWeight: 600 }}>{k.tutor}</span>
-                    {k.plan && (
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.15rem', display: 'block' }}>
-                        📋 {k.plan}
-                      </span>
-                    )}
-                  </div>
-                </td>
-                <td>{k.telefono}</td>
-                <td>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', alignItems: 'flex-start' }}>
-                    <span className={`${styles.statusBadge} ${k.activo !== false ? styles.activo : styles.inactivo}`}>
-                      {k.activo !== false ? "Activo" : "Inactivo"}
+                  </td>
+                  <td><span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{k.matricula}</span></td>
+                  <td>
+                    <span className={`belt-badge ${getBeltColor(k.cinturon)}`}>
+                      {k.cinturon}
                     </span>
-                    {k.paymentStatus && (
-                      <span className={`${styles.statusBadge}`} style={{
-                        background: k.paymentStatus === "pagado" ? "rgba(16, 185, 129, 0.15)" : k.paymentStatus === "exento" ? "rgba(59, 130, 246, 0.15)" : k.paymentStatus === "pendiente" ? "rgba(245, 158, 11, 0.15)" : "rgba(239, 68, 68, 0.15)",
-                        color: k.paymentStatus === "pagado" ? "#10b981" : k.paymentStatus === "exento" ? "#60a5fa" : k.paymentStatus === "pendiente" ? "#f59e0b" : "#ef4444",
-                        border: `1px solid ${k.paymentStatus === "pagado" ? "#10b981" : k.paymentStatus === "exento" ? "#3b82f6" : k.paymentStatus === "pendiente" ? "#f59e0b" : "#ef4444"}`,
-                        fontSize: '0.7rem',
-                        padding: '0.1rem 0.35rem',
-                        borderRadius: '4px',
-                        display: 'inline-block',
-                        fontWeight: 600,
-                        textTransform: 'uppercase'
-                      }}>
-                        {k.paymentStatus === "pagado" ? "Pagado" : k.paymentStatus === "exento" ? "Exento" : k.paymentStatus === "pendiente" ? "Pendiente" : "No Pagado"}
-                      </span>
-                    )}
-                  </div>
-                </td>
-                <td>
-                  <div className={styles.actions}>
-                    <button 
-                      className={`${styles.btnAction} ${styles.edit}`}
-                      onClick={() => handleEditOpen(k)}
-                    >
-                      Editar
-                    </button>
-                    <button 
-                      className={`${styles.btnAction} ${styles.card}`}
-                      onClick={() => {
-                        setSelectedKarateka(k);
-                        setIsLicenseOpen(true);
-                      }}
-                    >
-                      <Award size={14} /> Credencial
-                    </button>
-                    <button 
-                      className={`${styles.btnAction} ${styles.delete}`}
-                      onClick={() => handleDelete(k.id, k.nombre)}
-                      title="Eliminar Karateka"
-                    >
-                      <Trash2 size={14} /> Eliminar
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td>{k.grado}</td>
+                  <td>
+                    <div>
+                      <span style={{ display: 'block', fontWeight: 600 }}>{k.tutor}</span>
+                      {k.plan && (
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.15rem', display: 'block' }}>
+                          📋 {k.plan}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td>{k.telefono}</td>
+                  <td>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', alignItems: 'flex-start' }}>
+                      {/* Badge 1: Validation Status */}
+                      {isPending ? (
+                        <span className={`${styles.statusBadge} ${styles.pendienteValidacion}`}>
+                          ⏳ Pendiente Validación
+                        </span>
+                      ) : (
+                        <span className={`${styles.statusBadge} ${styles.validado}`}>
+                          ✓ Validado Oficial
+                        </span>
+                      )}
+
+                      {/* Badge 2: Payment Status */}
+                      {k.paymentStatus && (
+                        <span className={`${styles.statusBadge}`} style={{
+                          background: k.paymentStatus === "pagado" ? "rgba(16, 185, 129, 0.15)" : k.paymentStatus === "exento" ? "rgba(59, 130, 246, 0.15)" : k.paymentStatus === "pendiente" ? "rgba(245, 158, 11, 0.15)" : "rgba(239, 68, 68, 0.15)",
+                          color: k.paymentStatus === "pagado" ? "#10b981" : k.paymentStatus === "exento" ? "#60a5fa" : k.paymentStatus === "pendiente" ? "#f59e0b" : "#ef4444",
+                          border: `1px solid ${k.paymentStatus === "pagado" ? "#10b981" : k.paymentStatus === "exento" ? "#3b82f6" : k.paymentStatus === "pendiente" ? "#f59e0b" : "#ef4444"}`,
+                          fontSize: '0.7rem',
+                          padding: '0.1rem 0.35rem',
+                          borderRadius: '4px',
+                          display: 'inline-block',
+                          fontWeight: 600,
+                          textTransform: 'uppercase'
+                        }}>
+                          💳 {k.paymentStatus === "pagado" ? "PAGADO" : k.paymentStatus === "exento" ? "EXENTO" : k.paymentStatus === "pendiente" ? "PAGO PENDIENTE" : "NO PAGADO"}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td>
+                    <div className={styles.actions}>
+                      {/* Only Administrator has validation and approval privileges */}
+                      {isAdmin ? (
+                        <>
+                          {isPending && (
+                            <button 
+                              className={`${styles.btnAction} ${styles.validate}`}
+                              onClick={() => handleValidateUser(k)}
+                              title="Validar y Autorizar Registro Oficial"
+                            >
+                              <UserCheck size={15} /> Validar
+                            </button>
+                          )}
+
+                          <button 
+                            className={`${styles.btnAction} ${styles.payStatus}`}
+                            onClick={() => handleTogglePaymentStatus(k)}
+                            title="Cambiar/Verificar Estado de Pago"
+                          >
+                            <CreditCard size={14} /> Pago
+                          </button>
+
+                          <button 
+                            className={`${styles.btnAction} ${styles.edit}`}
+                            onClick={() => handleEditOpen(k)}
+                          >
+                            Editar
+                          </button>
+
+                          <button 
+                            className={`${styles.btnAction} ${styles.card}`}
+                            onClick={() => {
+                              setSelectedKarateka(k);
+                              setIsLicenseOpen(true);
+                            }}
+                          >
+                            <Award size={14} /> Credencial
+                          </button>
+
+                          <button 
+                            className={`${styles.btnAction} ${styles.delete}`}
+                            onClick={() => handleDelete(k.id, k.nombre)}
+                            title="Eliminar Registro"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </>
+                      ) : (
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+                          🔒 Solo Administrador
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
             {filteredKaratekas.length === 0 && (
               <tr>
                 <td colSpan={8} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-tertiary)' }}>
-                  {loading ? 'Cargando karatekas...' : 'No se encontraron karatekas con los filtros seleccionados.'}
+                  {loading ? 'Cargando directorio de karatekas...' : 'No se encontraron registros con los filtros seleccionados.'}
                 </td>
               </tr>
             )}
@@ -685,24 +986,27 @@ export default function AlumnosPage() {
         <div className={styles.modalOverlay}>
           <div className={styles.formCard}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2>{formId ? "Editar Karateka" : "Registrar Nuevo Alumno"}</h2>
+              <h2>{formId ? "Editar Registro" : "Registrar Alumno o Maestro"}</h2>
               <button onClick={() => setIsFormOpen(false)} style={{ color: 'var(--text-secondary)' }}><X /></button>
             </div>
             
             <form onSubmit={handleFormSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               <div className={styles.formGrid}>
                 <div className={styles.formGroup}>
-                  <label className={styles.label}>Matrícula</label>
-                  <input type="text" className={styles.input} value={formMatricula} onChange={(e) => setFormMatricula(e.target.value)} required />
+                  <label className={styles.label}>Rol en la Academia</label>
+                  <select className={styles.selectInput} value={formRole} onChange={(e) => setFormRole(e.target.value)}>
+                    <option value="karateka">Estudiante / Karateka</option>
+                    <option value="sensei">Maestro / Sensei Administrador</option>
+                  </select>
                 </div>
                 <div className={styles.formGroup}>
-                  <label className={styles.label}>Grado Kyu/Dan</label>
-                  <input type="text" className={styles.input} placeholder="e.g. 6° Kyu" value={formGrado} onChange={(e) => setFormGrado(e.target.value)} required />
+                  <label className={styles.label}>Matrícula</label>
+                  <input type="text" className={styles.input} value={formMatricula} onChange={(e) => setFormMatricula(e.target.value)} required />
                 </div>
               </div>
 
               <div className={styles.formGroup}>
-                <label className={styles.label}>Nombre Completo del Karateka</label>
+                <label className={styles.label}>Nombre Completo</label>
                 <input type="text" className={styles.input} placeholder="Nombre y Apellidos" value={formNombre} onChange={(e) => setFormNombre(e.target.value)} required />
               </div>
 
@@ -720,15 +1024,15 @@ export default function AlumnosPage() {
                   </select>
                 </div>
                 <div className={styles.formGroup}>
-                  <label className={styles.label}>Enlace de Foto (URL)</label>
-                  <input type="text" className={styles.input} placeholder="https://..." value={formFotoUrl} onChange={(e) => setFormFotoUrl(e.target.value)} />
+                  <label className={styles.label}>Grado Kyu/Dan</label>
+                  <input type="text" className={styles.input} placeholder="e.g. 6° Kyu / 1° Dan" value={formGrado} onChange={(e) => setFormGrado(e.target.value)} required />
                 </div>
               </div>
 
               <div className={styles.formGrid}>
                 <div className={styles.formGroup}>
                   <label className={styles.label}>Tutor Responsable</label>
-                  <input type="text" className={styles.input} placeholder="Nombre de Padre/Madre" value={formTutor} onChange={(e) => setFormTutor(e.target.value)} required />
+                  <input type="text" className={styles.input} placeholder="Padre/Madre o Propio Nombre" value={formTutor} onChange={(e) => setFormTutor(e.target.value)} required />
                 </div>
                 <div className={styles.formGroup}>
                   <label className={styles.label}>Teléfono WhatsApp</label>
@@ -738,12 +1042,12 @@ export default function AlumnosPage() {
 
               <div className={styles.formGrid}>
                 <div className={styles.formGroup}>
-                  <label className={styles.label}>Correo de Acceso (Usuario)</label>
-                  <input type="email" className={styles.input} placeholder="alumno@dojoia.com" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} required />
+                  <label className={styles.label}>Correo de Acceso</label>
+                  <input type="email" className={styles.input} placeholder="correo@dojoia.com" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} required />
                 </div>
                 <div className={styles.formGroup}>
                   <label className={styles.label}>Contraseña de Acceso</label>
-                  <input type="text" className={styles.input} placeholder="Contraseña para el alumno" value={formPassword} onChange={(e) => setFormPassword(e.target.value)} required />
+                  <input type="text" className={styles.input} placeholder="Contraseña de acceso" value={formPassword} onChange={(e) => setFormPassword(e.target.value)} required />
                 </div>
               </div>
 
@@ -762,14 +1066,14 @@ export default function AlumnosPage() {
                   </select>
                 </div>
                 <div className={styles.formGroup}>
-                  <label className={styles.label}>Estado de Pago (Membresía)</label>
+                  <label className={styles.label}>Estado de Pago</label>
                   <select 
                     className={styles.selectInput} 
                     value={formPaymentStatus} 
                     onChange={(e) => setFormPaymentStatus(e.target.value)}
                     style={{ width: '100%' }}
                   >
-                    <option value="pagado">Pagado / Activo</option>
+                    <option value="pagado">Pagado / Acreditado</option>
                     <option value="pendiente">Pendiente de Acreditación</option>
                     <option value="exento">Exento (No cobrar)</option>
                     <option value="no_pagado">Pendiente de Pago</option>
@@ -777,28 +1081,43 @@ export default function AlumnosPage() {
                 </div>
               </div>
 
-              <div className={styles.formCheckboxGroup}>
-                <input 
-                  type="checkbox" 
-                  id="formActivo"
-                  className={styles.checkboxInput} 
-                  checked={formActivo} 
-                  onChange={(e) => setFormActivo(e.target.checked)} 
-                />
-                <label htmlFor="formActivo" className={styles.label} style={{ cursor: 'pointer', userSelect: 'none' }}>
-                  Usuario Activo (Permite el acceso y escaneo de asistencia)
-                </label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.25rem' }}>
+                <div className={styles.formCheckboxGroup}>
+                  <input 
+                    type="checkbox" 
+                    id="formValidado"
+                    className={styles.checkboxInput} 
+                    checked={formValidado} 
+                    onChange={(e) => setFormValidado(e.target.checked)} 
+                  />
+                  <label htmlFor="formValidado" className={styles.label} style={{ cursor: 'pointer', userSelect: 'none', color: '#10b981', fontWeight: 700 }}>
+                    ✓ Registro Validado Oficialmente por Administrador
+                  </label>
+                </div>
+
+                <div className={styles.formCheckboxGroup}>
+                  <input 
+                    type="checkbox" 
+                    id="formActivo"
+                    className={styles.checkboxInput} 
+                    checked={formActivo} 
+                    onChange={(e) => setFormActivo(e.target.checked)} 
+                  />
+                  <label htmlFor="formActivo" className={styles.label} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                    Usuario Activo (Permite acceso al sistema y asistencias)
+                  </label>
+                </div>
               </div>
 
               <button type="submit" className="btn-primary" style={{ background: 'var(--brand-red)', marginTop: '0.5rem' }}>
-                {formId ? "Guardar Cambios" : "Guardar Karateka"}
+                {formId ? "Guardar Cambios" : "Guardar Registro"}
               </button>
             </form>
           </div>
         </div>
       )}
 
-      {/* MODAL 2: Credencial Digital / License */}
+      {/* MODAL 2: Credencial Digital */}
       {isLicenseOpen && selectedKarateka && (
         <div className={styles.modalOverlay}>
           <div className={styles.formCard} style={{ maxWidth: '370px', alignItems: 'center' }}>
@@ -854,7 +1173,7 @@ export default function AlumnosPage() {
         </div>
       )}
 
-      {/* MODAL 3: Excel/CSV Drag-and-drop Importer */}
+      {/* MODAL 3: Excel/CSV Importer */}
       {isImportOpen && (
         <div className={styles.modalOverlay}>
           <div className={styles.importerCard}>
@@ -908,7 +1227,7 @@ export default function AlumnosPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                 <h3>Mapear Columnas de tu Archivo</h3>
                 <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                  Asocia las columnas de tu CSV con los campos del perfil de Karateka en Supabase.
+                  Asocia las columnas de tu CSV con los campos del perfil en el Dojo.
                 </p>
 
                 <div style={{ background: 'var(--bg-tertiary)', padding: '1rem', borderRadius: '8px' }}>

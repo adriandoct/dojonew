@@ -6,14 +6,27 @@ import { createClient } from "@/utils/supabase/server";
 import { cookies } from "next/headers";
 
 function parseTutorField(tutorField: string) {
-  const match = tutorField?.match(/(.*)\s+\[credentials:(.*?):(.*?)(?::(.*?):(.*?))?\]/);
+  if (!tutorField) {
+    return {
+      tutor: "",
+      email: "",
+      password: "",
+      plan: "Mensualidad Regular",
+      paymentStatus: "pagado",
+      role: "karateka",
+      validado: true
+    };
+  }
+  const match = tutorField.match(/(.*)\s+\[credentials:([^:]*):([^:]*)(?::([^:]*))?(?::([^:]*))?(?::([^:]*))?(?::([^:]*))?\]/);
   if (match) {
     return {
       tutor: match[1].trim(),
-      email: match[2],
-      password: match[3],
+      email: match[2] || "",
+      password: match[3] || "",
       plan: match[4] || "Mensualidad Regular",
-      paymentStatus: match[5] || "pagado"
+      paymentStatus: match[5] || "pagado",
+      role: match[6] || "karateka",
+      validado: match[7] ? match[7] === "validado" : true
     };
   }
   return {
@@ -21,8 +34,26 @@ function parseTutorField(tutorField: string) {
     email: "",
     password: "",
     plan: "Mensualidad Regular",
-    paymentStatus: "pagado"
+    paymentStatus: "pagado",
+    role: "karateka",
+    validado: true
   };
+}
+
+function serializeTutorField(
+  tutorName: string, 
+  email: string, 
+  password: string, 
+  plan = "Mensualidad Regular", 
+  paymentStatus = "pagado",
+  role = "karateka",
+  validado = true
+) {
+  if (email && password) {
+    const valStr = validado ? "validado" : "pendiente";
+    return `${tutorName.trim()} [credentials:${email.trim().toLowerCase()}:${password.trim()}:${plan}:${paymentStatus}:${role}:${valStr}]`;
+  }
+  return tutorName.trim();
 }
 
 export async function login(formData: FormData) {
@@ -109,10 +140,10 @@ export async function login(formData: FormData) {
 
         if (matched) {
           if (matched.activo === false) {
-            return redirect("/login?error=Esta cuenta de alumno está desactivada. Contacta a tu Sensei.");
+            return redirect("/login?error=" + encodeURIComponent("Tu cuenta de alumno/maestro está pendiente de validación por parte del Sensei Administrador."));
           }
           const creds = parseTutorField(matched.tutor);
-          cookieStore.set("dojoia_role", "karateka", { path: "/" });
+          cookieStore.set("dojoia_role", creds.role || "karateka", { path: "/" });
           cookieStore.set("dojoia_email", email, { path: "/" });
           cookieStore.set("dojoia_name", matched.nombre, { path: "/" });
           cookieStore.set("dojoia_plan", creds.plan, { path: "/" });
@@ -180,10 +211,11 @@ export async function signup(formData: FormData) {
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
   const fullName = formData.get("fullName") as string;
-  const role = formData.get("role") as string || "karateka";
-  const plan = formData.get("plan") as string || "Mensualidad Regular";
+  const role = (formData.get("role") as string) || "karateka";
+  const telefono = (formData.get("telefono") as string) || "Sin registrar";
+  const plan = (formData.get("plan") as string) || "Mensualidad Regular";
   const bypassPayment = formData.get("bypassPayment") === "true";
-  let paymentStatus = formData.get("paymentStatus") as string || "no_pagado";
+  let paymentStatus = (formData.get("paymentStatus") as string) || "no_pagado";
 
   if (bypassPayment) {
     paymentStatus = "exento";
@@ -191,6 +223,64 @@ export async function signup(formData: FormData) {
 
   const cookieStore = await cookies();
   const isCurrentAdmin = cookieStore.get("dojoia_role")?.value === "sensei";
+
+  const isVal = isCurrentAdmin ? true : false;
+  const isAct = isCurrentAdmin ? true : false;
+
+  const defaultMatricula = role === "sensei" 
+    ? `MS-2026-${Math.floor(100 + Math.random() * 900)}` 
+    : `KA-2026-${Math.floor(100 + Math.random() * 900)}`;
+
+  const tutorSerialized = serializeTutorField(
+    fullName,
+    email,
+    password,
+    plan,
+    paymentStatus,
+    role,
+    isVal
+  );
+
+  const dbPayload = {
+    matricula: defaultMatricula,
+    nombre: fullName.trim(),
+    cinturon: role === "sensei" ? "negro" : "blanco",
+    grado: role === "sensei" ? "1° Dan" : "10° Kyu",
+    tutor: tutorSerialized,
+    telefono: telefono.trim() || "Sin registrar",
+    foto_url: role === "sensei" 
+      ? "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200" 
+      : "https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&q=80&w=200",
+    activo: isAct
+  };
+
+  try {
+    await supabase.from("karatekas").insert(dbPayload);
+  } catch (err) {
+    console.warn("Inserting into karatekas table skipped/failed:", err);
+  }
+
+  // Also save pending user record in cookie for local state hydration
+  try {
+    const existingPending = cookieStore.get("dojoia_pending_users")?.value;
+    let pendingArr: any[] = [];
+    if (existingPending) {
+      pendingArr = JSON.parse(existingPending);
+    }
+    pendingArr.push({
+      id: "reg_" + Date.now(),
+      ...dbPayload,
+      email,
+      password,
+      plan,
+      paymentStatus,
+      role,
+      validado: isVal
+    });
+    cookieStore.set("dojoia_pending_users", JSON.stringify(pendingArr), { path: "/" });
+  } catch (err) {
+    console.warn("Could not set pending user cookie", err);
+  }
 
   const { error } = await supabase.auth.signUp({
     email,
@@ -209,7 +299,7 @@ export async function signup(formData: FormData) {
     // Fallback for offline signup demo
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || String(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY).includes("reemplázala")) {
       if (isCurrentAdmin) {
-        return redirect("/dashboard/alumnos?success=" + encodeURIComponent("Alumno registrado en local (Demo Offline) con éxito."));
+        return redirect("/dashboard/alumnos?success=" + encodeURIComponent("Alumno/Maestro registrado en el sistema con éxito."));
       }
       cookieStore.set("dojoia_role", role, { path: "/" });
       cookieStore.set("dojoia_email", email, { path: "/" });
@@ -222,7 +312,7 @@ export async function signup(formData: FormData) {
   }
 
   if (isCurrentAdmin) {
-    return redirect("/dashboard/alumnos?success=" + encodeURIComponent("Alumno registrado con éxito en el sistema."));
+    return redirect("/dashboard/alumnos?success=" + encodeURIComponent("Alumno/Maestro registrado con éxito en el sistema."));
   }
 
   cookieStore.set("dojoia_role", role, { path: "/" });

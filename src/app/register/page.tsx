@@ -144,6 +144,17 @@ export default async function RegisterPage({
           </div>
 
           <div className={styles.formGroup}>
+            <label className={styles.label} htmlFor="telefono">Teléfono WhatsApp de Contacto</label>
+            <input 
+              className={styles.input}
+              id="telefono" 
+              name="telefono" 
+              type="tel" 
+              placeholder="Ej. +5216641234567"
+            />
+          </div>
+
+          <div className={styles.formGroup}>
             <label className={styles.label} htmlFor="password">Contraseña (Mínimo 6 caracteres)</label>
             <input 
               className={styles.input}
